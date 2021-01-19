@@ -1,17 +1,17 @@
-use std::{env, Thread, Time};
+use std::{env, thread, time};
 use alsa::{Direction, ValueOr};
 use alsa::pcm::{PCM, HwParams, Format, Access, State};
 
 fn main() {
-    /*let args = env::args();
+    let args = env::args();
     let _ = args.next(); //Throw away the filename
-    let devName=args.next().expect("Insufficient arguments.  Must provide device name.");
+    let dev_name=args.next().expect("Insufficient arguments.  Must provide device name.");
     //Threshold will need to become an i16 eventually, but not necessary yet.
-    let threshold = args.next().expect("Insufficient arguments.  Must provide threshold");
+    let out_dev_name = args.next().expect("Insufficient arguments.  Must provide output device");
     //Bool is for the nonblock property*/
-    let devName="";
+    let dev_name="";
     let out_dev_name="";
-   let pcm = PCM::new(&devName, Direction::Capture, false);
+   let pcm = PCM::new(&dev_name, Direction::Capture, false);
    let hwp = HwParams::any(&pcm).unwrap();
     hwp.set_channels(1).unwrap();
     hwp.set_rate(44100, ValueOr::Nearest).unwrap();
@@ -25,7 +25,7 @@ fn main() {
     let reads=io.readi(&buf).unwrap();
     println!("Read {} frames", reads);
     println!("Received following data: {:#?}", buf);
-    thread::sleep(time::Duration::from_millis(5000);
+    thread::sleep(time::Duration::from_millis(5000));
 
     let writePCM=PCM::new(&out_dev_name, Direction::Playback, false);
 
