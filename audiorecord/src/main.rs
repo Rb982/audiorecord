@@ -1,4 +1,4 @@
-use std::env;
+use std::{env, Thread, Time};
 use alsa::{Direction, ValueOr};
 use alsa::pcm::{PCM, HwParams, Format, Access, State};
 
@@ -10,7 +10,7 @@ fn main() {
     let threshold = args.next().expect("Insufficient arguments.  Must provide threshold");
     //Bool is for the nonblock property*/
     let devName="";
-    
+    let out_dev_name="";
    let pcm = PCM::new(&devName, Direction::Capture, false);
    let hwp = HwParams::any(&pcm).unwrap();
     hwp.set_channels(1).unwrap();
@@ -25,4 +25,16 @@ fn main() {
     let reads=io.readi(&buf).unwrap();
     println!("Read {} frames", reads);
     println!("Received following data: {:#?}", buf);
+    thread::sleep(time::Duration::from_millis(5000);
+
+    let writePCM=PCM::new(&out_dev_name, Direction::Playback, false);
+
+    let ohwp = HwParams::any(&writePCM).unwrap();
+    ohwp.set_channels(1).unwrap();
+    ohwp.set_rate(44100, ValueOr::Nearest).unwrap();
+    ohwp.set_format(Format::s16()).unwrap();
+    ohwp.set_access(Access::RWInterleaved).unwrap();
+    pcm.hw_params(&ohwp).unwrap();
+    let oio = writePCM.io_i16().unwrap();
+    oio.writei(&buf);
 }
