@@ -1,4 +1,4 @@
-use std::{env, thread, time};
+use std::{env, thread, time, mem};
 use alsa::{Direction, ValueOr};
 use alsa::pcm::{PCM, HwParams, Format, Access, State};
 
@@ -28,7 +28,8 @@ println!("Max channels: {}", hwp.get_channels_max().unwrap());
     println!("Read {} frames", reads);
     println!("Received following data: {:#?}", buf);
     thread::sleep(time::Duration::from_millis(5000));
-
+	mem::drop(io);
+	mem::drop(pcm);
     let writePCM=PCM::new(&out_dev_name, Direction::Playback, false).unwrap();
 
     let ohwp = HwParams::any(&writePCM).unwrap();
