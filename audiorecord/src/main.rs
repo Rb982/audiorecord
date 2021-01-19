@@ -1,4 +1,4 @@
-use std::{env, thread, time, mem};
+use std::{env, thread, time, mem, boxed};
 use alsa::{Direction, ValueOr};
 use alsa::pcm::{PCM, HwParams, Format, Access, State};
 
@@ -15,7 +15,7 @@ fn main() {
    playback(&out_dev_name, buf);
 }
 
-fn record(dev_name: &str)->[i16]{
+fn record(dev_name: &str)->Box<[i16]>{
     let pcm = PCM::new(dev_name, Direction::Capture, false).unwrap();
    let hwp = HwParams::any(&pcm).unwrap();
 println!("Min channels: {}", hwp.get_channels_min().unwrap());
@@ -32,9 +32,9 @@ println!("Max channels: {}", hwp.get_channels_max().unwrap());
     let reads=io.readi(&mut buf).unwrap();
     println!("Read {} frames", reads);
     println!("Received following data: {:#?}", buf);
-    buf
+    boxed::Box::new(buf)
 }
-fn playback(dev_name: &str, buf: [i16])->(){
+fn playback(dev_name: &str, buf: &[i16])->(){
     let writePCM=PCM::new(dev_name, Direction::Playback, false).unwrap();
 
     let ohwp = HwParams::any(&writePCM).unwrap();
@@ -42,7 +42,7 @@ fn playback(dev_name: &str, buf: [i16])->(){
     ohwp.set_rate(44100, ValueOr::Nearest).unwrap();
     ohwp.set_format(Format::s16()).unwrap();
     ohwp.set_access(Access::RWInterleaved).unwrap();
-    pcm.hw_params(&ohwp).unwrap();
+    writePCM.hw_params(&ohwp).unwrap();
     let oio = writePCM.io_i16().unwrap();
     oio.writei(&buf);
 }
