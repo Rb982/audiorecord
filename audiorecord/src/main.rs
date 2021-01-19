@@ -11,7 +11,12 @@ fn main() {
     //Bool is for the nonblock property*/
  //   let dev_name="";
    // let out_dev_name="";
-   let pcm = PCM::new(&dev_name, Direction::Capture, false).unwrap();
+   let buf = record(&dev_name);
+   playback(&out_dev_name, buf);
+}
+
+fn record(dev_name: &str)->[i16]{
+    let pcm = PCM::new(dev_name, Direction::Capture, false).unwrap();
    let hwp = HwParams::any(&pcm).unwrap();
 println!("Min channels: {}", hwp.get_channels_min().unwrap());
 println!("Max channels: {}", hwp.get_channels_max().unwrap());
@@ -27,10 +32,10 @@ println!("Max channels: {}", hwp.get_channels_max().unwrap());
     let reads=io.readi(&mut buf).unwrap();
     println!("Read {} frames", reads);
     println!("Received following data: {:#?}", buf);
-    thread::sleep(time::Duration::from_millis(5000));
-	mem::drop(io);
-	mem::drop(pcm);
-    let writePCM=PCM::new(&out_dev_name, Direction::Playback, false).unwrap();
+    buf
+}
+fn playback(dev_name: &str, buf: [i16])->(){
+    let writePCM=PCM::new(dev_name, Direction::Playback, false).unwrap();
 
     let ohwp = HwParams::any(&writePCM).unwrap();
     ohwp.set_channels(1).unwrap();
