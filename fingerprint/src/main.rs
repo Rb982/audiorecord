@@ -4,6 +4,15 @@ use std::io::{BufReader, BufRead};
 use std::env;
 use rustfft;
 use rustfft::num_complex::Complex32;
+
+struct Config {
+    slice_size: usize,
+    min_freq: usize,
+    max_freq: usize,
+    num_bands: usize,
+    sample_rate: usize,
+}
+
 fn main() {
     let mut args = env::args();
     let _ = args.next();
@@ -53,6 +62,39 @@ fn fourier(data:Vec<f32>, slice_size: usize)->Vec<Complex32>{
     plan.process(&mut buffer);
     buffer.to_vec()
 }
-fn fingerprint(data: &Vec<i16>, slice_size: usize, maxfreq:usize, minfreq: usize, bandwidth: usize)->Vec<bool>{
-    todo!()
+//Let's define a struct that has al the config data; 5 usizes in a row is super clunky.
+fn fingerprint(data: &Vec<i16>, config: Config)->Vec<bool>{
+    let frames = data.len()/config.slice_size;
+    let band_width = (config.max_freq-config.min_freq)/config.num_bands;
+    let mut energy_matrix = Vec::with_capacity(frames);
+    let mut i = 0;
+    let transformed = fourier(hanning_window(&data, config.slice_size), config.slice_size);
+    while i<data.len(){
+        let mut row = vec![0f32; config.num_bands];
+        let frame_end = (i+1) * config.slice_size;
+        while i<frame_end{
+            let curr_band = (i % config.num_bands) * (config.sample_rate / config.num_bands) / band_width;
+            let to_add = transformed[1].norm_sqr();
+            row[curr_band] = row[curr_band]+to_add;
+            i = i+1;
+        }
+        energy_matrix.push(row);
+    }
+    //In principle, we here have a full energy matrix.
+    i = 1;
+    let mut to_ret = Vec::new();
+    while i<energy_matrix.len()-1{
+        let mut j = 0;
+        while j< config.num_bands-2 {
+            to_ret.push(if energy_matrix[i][j] - energy_matrix[i][j+1] - (energy_matrix[i-1][j]-energy_matrix[i-1][j+1]) > 0.0 {
+                true
+            }else{
+               false
+            });
+            j = j+1;
+        }
+        i=i+1;  
+    };
+    to_ret
+    
 }
