@@ -55,3 +55,6 @@ fn write_out(filename: &str, buf: Vec<i16>)->(){
     writer.flush().unwrap();
 
 }
+fn hanning_window(samples: &Vec<i16>)->Vec<f32>{
+    todo!();
+}
