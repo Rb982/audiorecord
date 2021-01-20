@@ -1,16 +1,13 @@
 use std::{env, thread, time, mem, boxed};
 use alsa::{Direction, ValueOr};
 use alsa::pcm::{PCM, HwParams, Format, Access, State};
-
+use hound;
 fn main() {
     let mut args = env::args();
     let _ = args.next(); //Throw away the filename
     let dev_name=args.next().expect("Insufficient arguments.  Must provide device name.");
-    //Threshold will need to become an i16 eventually, but not necessary yet.
     let out_dev_name = args.next().expect("Insufficient arguments.  Must provide output device");
-    //Bool is for the nonblock property*/
- //   let dev_name="";
-   // let out_dev_name="";
+    let wav_name = args.next().expect("Insufficient arguments.  Must provide filename to write wav to");
    let buf = record(&dev_name);
    playback(&out_dev_name, buf);
 }
@@ -32,9 +29,9 @@ println!("Max channels: {}", hwp.get_channels_max().unwrap());
     let reads=io.readi(&mut buf).unwrap();
     println!("Read {} frames", reads);
     println!("Received following data: {:#?}", buf);
-    boxed::Box::new(buf)
+    boxed::Box::new(buf).into_vec()
 }
-fn playback(dev_name: &str, buf: &[i16])->(){
+fn playback(dev_name: &str, buf: &Vec<i16>)->(){
     let writePCM=PCM::new(dev_name, Direction::Playback, false).unwrap();
 
     let ohwp = HwParams::any(&writePCM).unwrap();
@@ -44,5 +41,17 @@ fn playback(dev_name: &str, buf: &[i16])->(){
     ohwp.set_access(Access::RWInterleaved).unwrap();
     writePCM.hw_params(&ohwp).unwrap();
     let oio = writePCM.io_i16().unwrap();
-    oio.writei(&buf);
+    oio.writei(&buf.as_slice());
+}
+fn write_out(filename: &str, buf: Vec<i16>)->(){
+    let specs = hound::WavSpec{
+        channels: 2,
+        sample_rate: 44100,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int
+    };
+    let mut writer=hound::WavWriter::new(filename, specs).get_i16_writer(buf.len());
+    buf.iter.for_each(|x| writer.write_sample(x));
+    writer.flush().unwrap();
+
 }

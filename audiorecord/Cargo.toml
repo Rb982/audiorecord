@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 alsa="0.4.3"
+hound="3.4.0"
