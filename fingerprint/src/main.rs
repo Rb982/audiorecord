@@ -4,6 +4,7 @@ use std::io::{BufReader, BufRead};
 use std::env;
 use rustfft;
 use rustfft::num_complex::Complex32;
+//use bitvec::vec::BitVec;
 
 struct Config {
     slice_size: usize,
@@ -14,13 +15,25 @@ struct Config {
 }
 
 fn main() {
+    let config = Config{
+        slice_size: 61,
+        min_freq: 0,
+        max_freq: 20000,
+        num_bands: 33,
+        sample_rate: 44100,
+    };
     let mut args = env::args();
     let _ = args.next();
     let filename = args.next().expect("Argument missing; must provide filename");
 
-   let test = read_file(&filename);
-   println!("{:#?}", hanning_window(&test, test.len()));
-   println!("{:#?}", fourier(hanning_window(&test, test.len()), test.len()));
+   let test_data = read_file(&filename);
+   let bits = fingerprint(&test_data, config);
+   for bit in &bits {
+       println!("{}", bit);
+   } 
+   //println!("{:#?}", hanning_window(&test, test.len()));
+  // println!("{:#?}", fourier(hanning_window(&test, test.len()), test.len()));
+
 }
 
 
@@ -30,9 +43,10 @@ fn hanning_window(input: &Vec<i16>, window_len: usize)->Vec<f32>{
     while i<input.len() {
         //I think some of these unit conversions are unnecessary, but unclear which.
         let hann=0.5f32 * (1f32-(2f32*std::f32::consts::PI*(i%window_len) as f32/window_len as f32).cos());
-        to_ret.push(hann * *input.get(i).unwrap() as f32);
+        to_ret.push(hann * input[i] as f32);
         i=i+1;
     }
+   // println!("Windowed: {:#?}", to_ret);
     to_ret
 }
 fn read_file(filename: &str)->Vec<i16>{
@@ -63,18 +77,23 @@ fn fourier(data:Vec<f32>, slice_size: usize)->Vec<Complex32>{
     buffer.to_vec()
 }
 //Let's define a struct that has al the config data; 5 usizes in a row is super clunky.
-fn fingerprint(data: &Vec<i16>, config: Config)->Vec<bool>{
+fn fingerprint(data: &Vec<i16>, config: Config)->Vec<u8>{
     let frames = data.len()/config.slice_size;
     let band_width = (config.max_freq-config.min_freq)/config.num_bands;
     let mut energy_matrix = Vec::with_capacity(frames);
     let mut i = 0;
     let transformed = fourier(hanning_window(&data, config.slice_size), config.slice_size);
+    //println!("Transformed vec: #{:#?}", transformed);
     while i<data.len(){
         let mut row = vec![0f32; config.num_bands];
         let frame_end = (i+1) * config.slice_size;
-        while i<frame_end{
-            let curr_band = (i % config.num_bands) * (config.sample_rate / config.num_bands) / band_width;
-            let to_add = transformed[1].norm_sqr();
+        while i<frame_end&&i<transformed.len(){
+            //I strongly suspect there's an error on this line, still.  Double check the math.
+            //This is definitely where the error is.
+            //let curr_band = ((i % config.slice_size) * (config.sample_rate / config.num_bands) / band_width);
+            let curr_band =((i% config.slice_size) as f32/config.slice_size as f32 *config.num_bands as f32) as usize;
+           // println!("On iter {}, band is {}", i, curr_band);
+            let to_add = transformed[i].norm_sqr();
             row[curr_band] = row[curr_band]+to_add;
             i = i+1;
         }
@@ -87,14 +106,18 @@ fn fingerprint(data: &Vec<i16>, config: Config)->Vec<bool>{
         let mut j = 0;
         while j< config.num_bands-2 {
             to_ret.push(if energy_matrix[i][j] - energy_matrix[i][j+1] - (energy_matrix[i-1][j]-energy_matrix[i-1][j+1]) > 0.0 {
-                true
+                1u8
             }else{
-               false
+               0u8
             });
             j = j+1;
         }
         i=i+1;  
     };
+    println!("error checking");
+    for row in &energy_matrix {
+        println!("{:#?}", row);
+    } 
     to_ret
     
 }

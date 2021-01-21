@@ -7,7 +7,7 @@ file = open(filename)
 for x in file:
     if(len(x)>1):
         data.append(x[0:len(x)-1])
-print(data)
+#print(data)
 xaxis=[*range(0, len(data))]
 fig, ax = plt.subplots()
 ax.plot(xaxis, data)
