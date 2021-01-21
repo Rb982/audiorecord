@@ -2,17 +2,21 @@ use std::{env, thread, time, mem, boxed};
 use alsa::{Direction, ValueOr};
 use alsa::pcm::{PCM, HwParams, Format, Access, State};
 use hound;
+use std::fs::File;
 fn main() {
     let mut args = env::args();
     let _ = args.next(); //Throw away the filename
     let dev_name=args.next().expect("Insufficient arguments.  Must provide device name.");
-    let out_dev_name = args.next().expect("Insufficient arguments.  Must provide output device");
+   // let out_dev_name = args.next().expect("Insufficient arguments.  Must provide output device");
     let wav_name = args.next().expect("Insufficient arguments.  Must provide filename to write wav to");
+    let text_name = args.next().expect("Insufficient args.");
    let buf = record(&dev_name);
-   playback(&out_dev_name, buf);
+    write_wav(&wav_name, &buf);
+    write_txt(&text_name, &buf);
+  // playback(&out_dev_name, buf);
 }
 
-fn record(dev_name: &str)->Box<[i16]>{
+fn record(dev_name: &str)->Vec<i16>{
     let pcm = PCM::new(dev_name, Direction::Capture, false).unwrap();
    let hwp = HwParams::any(&pcm).unwrap();
 println!("Min channels: {}", hwp.get_channels_min().unwrap());
@@ -43,7 +47,7 @@ fn playback(dev_name: &str, buf: &Vec<i16>)->(){
     let oio = writePCM.io_i16().unwrap();
     oio.writei(&buf.as_slice());
 }
-fn write_out(filename: &str, buf: Vec<i16>)->(){
+fn write_wav(filename: &str, buf: &Vec<i16>)->(){
     let specs = hound::WavSpec{
         channels: 2,
         sample_rate: 44100,
@@ -51,10 +55,14 @@ fn write_out(filename: &str, buf: Vec<i16>)->(){
         sample_format: hound::SampleFormat::Int
     };
     let mut writer=hound::WavWriter::new(filename, specs).get_i16_writer(buf.len());
-    buf.iter.for_each(|x| writer.write_sample(x));
+    buf.iter().for_each(|x| writer.write_sample(x)).;
     writer.flush().unwrap();
 
 }
-fn hanning_window(samples: &Vec<i16>)->Vec<f32>{
-    todo!();
+fn write_txt(filename: &str, buf: &Vec<i16>)->(){
+    let mut target = File::create(filename).unwrap();
+    for n in buf.iter() {
+        target.write(n.to_string());
+        target.write("\n");
+    }
 }
