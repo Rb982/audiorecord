@@ -3,6 +3,7 @@ use alsa::{Direction, ValueOr};
 use alsa::pcm::{PCM, HwParams, Format, Access, State};
 use hound;
 use std::fs::File;
+use std::io::Write;
 fn main() {
     let mut args = env::args();
     let _ = args.next(); //Throw away the filename
@@ -28,12 +29,12 @@ println!("Max channels: {}", hwp.get_channels_max().unwrap());
     pcm.hw_params(&hwp).unwrap();
     let io = pcm.io_i16().unwrap();
 
-
-    let mut buf = [0i16; 1024];
+	//enough space for 6.5 seconds of recording at 44100Hz with 2 channels
+    let mut buf = [0i16; 573300];
     let reads=io.readi(&mut buf).unwrap();
     println!("Read {} frames", reads);
     println!("Received following data: {:#?}", buf);
-    boxed::Box::new(buf).into_vec()
+    boxed::Box::new(buf).to_vec()
 }
 fn playback(dev_name: &str, buf: &Vec<i16>)->(){
     let writePCM=PCM::new(dev_name, Direction::Playback, false).unwrap();
@@ -54,15 +55,19 @@ fn write_wav(filename: &str, buf: &Vec<i16>)->(){
         bits_per_sample: 16,
         sample_format: hound::SampleFormat::Int
     };
-    let mut writer=hound::WavWriter::new(filename, specs).get_i16_writer(buf.len());
-    buf.iter().for_each(|x| writer.write_sample(x)).;
-    writer.flush().unwrap();
+    let mut writer=hound::WavWriter::create(filename, specs).unwrap();
+	let mut iwriter = writer.get_i16_writer(buf.len()as u32);
+	for n in buf.iter() {
+		iwriter.write_sample(*n);
+	}
+//    buf.iter().for_each(|x| writer.write_sample(x)).;
+    iwriter.flush().unwrap();
 
 }
 fn write_txt(filename: &str, buf: &Vec<i16>)->(){
     let mut target = File::create(filename).unwrap();
     for n in buf.iter() {
-        target.write(n.to_string());
-        target.write("\n");
+        target.write_all(n.to_string().as_bytes());
+        target.write_all("\n".as_bytes());
     }
 }
