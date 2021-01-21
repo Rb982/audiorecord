@@ -66,8 +66,10 @@ fn write_wav(filename: &str, buf: &Vec<i16>)->(){
 }
 fn write_txt(filename: &str, buf: &Vec<i16>)->(){
     let mut target = File::create(filename).unwrap();
-    for n in buf.iter() {
-        target.write_all(n.to_string().as_bytes());
+    for i in 0..buf.len() {
+        if{i%2==0}{
+        target.write_all(buf[i].to_string().as_bytes());
         target.write_all("\n".as_bytes());
+        }
     }
 }

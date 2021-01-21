@@ -29,7 +29,7 @@ fn main() {
    let test_data = read_file(&filename);
    let bits = fingerprint(&test_data, config);
    for bit in &bits {
-       println!("{}", bit);
+      println!("{}", bit);
    } 
    //println!("{:#?}", hanning_window(&test, test.len()));
   // println!("{:#?}", fourier(hanning_window(&test, test.len()), test.len()));
@@ -62,7 +62,11 @@ fn read_file(filename: &str)->Vec<i16>{
     } 
     to_ret
 }
-fn fourier(data:Vec<f32>, slice_size: usize)->Vec<Complex32>{
+fn fourier(mut data:Vec<f32>, slice_size: usize)->Vec<Complex32>{
+    //Fftplanner needs length of the buffer to be divisible by slice_size, so we enforce that here
+    if {data.len()%slice_size !=0} {
+        data.truncate(data.len()-data.len()%slice_size);
+    }
     let mut planner = rustfft::FftPlanner::new();
     let plan = planner.plan_fft_forward(slice_size);
   //  let mut buffer: Vec<Complex<f32>> = data.iter().map(|x| Complex::new(&x, 0f32)).collect();
@@ -79,18 +83,14 @@ fn fourier(data:Vec<f32>, slice_size: usize)->Vec<Complex32>{
 //Let's define a struct that has al the config data; 5 usizes in a row is super clunky.
 fn fingerprint(data: &Vec<i16>, config: Config)->Vec<u8>{
     let frames = data.len()/config.slice_size;
-    let band_width = (config.max_freq-config.min_freq)/config.num_bands;
+    //let band_width = (config.max_freq-config.min_freq)/config.num_bands;
     let mut energy_matrix = Vec::with_capacity(frames);
     let mut i = 0;
     let transformed = fourier(hanning_window(&data, config.slice_size), config.slice_size);
-    //println!("Transformed vec: #{:#?}", transformed);
     while i<data.len(){
         let mut row = vec![0f32; config.num_bands];
-        let frame_end = (i+1) * config.slice_size;
+        let frame_end = i+ config.slice_size;
         while i<frame_end&&i<transformed.len(){
-            //I strongly suspect there's an error on this line, still.  Double check the math.
-            //This is definitely where the error is.
-            //let curr_band = ((i % config.slice_size) * (config.sample_rate / config.num_bands) / band_width);
             let curr_band =((i% config.slice_size) as f32/config.slice_size as f32 *config.num_bands as f32) as usize;
            // println!("On iter {}, band is {}", i, curr_band);
             let to_add = transformed[i].norm_sqr();
@@ -100,6 +100,9 @@ fn fingerprint(data: &Vec<i16>, config: Config)->Vec<u8>{
         energy_matrix.push(row);
     }
     //In principle, we here have a full energy matrix.
+    //In practice, I'm short several hundred bits.
+    //println!("There are {} rows of len {}", energy_matrix.len(), energy_matrix[0].len());
+    
     i = 1;
     let mut to_ret = Vec::new();
     while i<energy_matrix.len()-1{
@@ -111,13 +114,10 @@ fn fingerprint(data: &Vec<i16>, config: Config)->Vec<u8>{
                0u8
             });
             j = j+1;
-        }
+        };
         i=i+1;  
     };
-    println!("error checking");
-    for row in &energy_matrix {
-        println!("{:#?}", row);
-    } 
+   
     to_ret
     
 }
