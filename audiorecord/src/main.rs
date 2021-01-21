@@ -33,7 +33,7 @@ println!("Max channels: {}", hwp.get_channels_max().unwrap());
     let mut buf = [0i16; 573300];
     let reads=io.readi(&mut buf).unwrap();
     println!("Read {} frames", reads);
-    println!("Received following data: {:#?}", buf);
+//    println!("Received following data: {:#?}", buf);
     boxed::Box::new(buf).to_vec()
 }
 fn playback(dev_name: &str, buf: &Vec<i16>)->(){
