@@ -16,7 +16,7 @@ struct Config {
 
 fn main() {
     let config = Config{
-        slice_size: 61,
+        slice_size: 16537,
         min_freq: 0,
         max_freq: 20000,
         num_bands: 33,
@@ -26,8 +26,8 @@ fn main() {
     let _ = args.next();
     let filename = args.next().expect("Argument missing; must provide filename");
 
-   let test_data = read_file(&filename);
-   let bits = fingerprint(&test_data, config);
+   let mut test_data = read_file(&filename);
+   let bits = fingerprint(test_data, config);
    for bit in &bits {
       println!("{}", bit);
    } 
@@ -63,10 +63,9 @@ fn read_file(filename: &str)->Vec<i16>{
     to_ret
 }
 fn fourier(mut data:Vec<f32>, slice_size: usize)->Vec<Complex32>{
-    //Fftplanner needs length of the buffer to be divisible by slice_size, so we enforce that here
-    if {data.len()%slice_size !=0} {
-        data.truncate(data.len()-data.len()%slice_size);
-    }
+   // println!("Starting Fourier");
+    
+    
     let mut planner = rustfft::FftPlanner::new();
     let plan = planner.plan_fft_forward(slice_size);
   //  let mut buffer: Vec<Complex<f32>> = data.iter().map(|x| Complex::new(&x, 0f32)).collect();
@@ -81,8 +80,13 @@ fn fourier(mut data:Vec<f32>, slice_size: usize)->Vec<Complex32>{
     buffer.to_vec()
 }
 //Let's define a struct that has al the config data; 5 usizes in a row is super clunky.
-fn fingerprint(data: &Vec<i16>, config: Config)->Vec<u8>{
+fn fingerprint(mut data: Vec<i16>, config: Config)->Vec<u8>{
+    //Probably should end up with this back inside the call to fourier, and just replace calls to data.len() with transformed.len()
+    if {data.len()%config.slice_size !=0} {
+        data.truncate(data.len()-data.len()%config.slice_size);
+    }
     let frames = data.len()/config.slice_size;
+   // println!("Frames: {}", frames);
     //let band_width = (config.max_freq-config.min_freq)/config.num_bands;
     let mut energy_matrix = Vec::with_capacity(frames);
     let mut i = 0;
@@ -98,16 +102,18 @@ fn fingerprint(data: &Vec<i16>, config: Config)->Vec<u8>{
             i = i+1;
         }
         energy_matrix.push(row);
+        //println!("Row built, value of i is {} and next frame ends at {}", i, frame_end);
     }
+    //println!("Energy matrix built");
     //In principle, we here have a full energy matrix.
     //In practice, I'm short several hundred bits.
     //println!("There are {} rows of len {}", energy_matrix.len(), energy_matrix[0].len());
     
     i = 1;
     let mut to_ret = Vec::new();
-    while i<energy_matrix.len()-1{
+    while i<energy_matrix.len(){
         let mut j = 0;
-        while j< config.num_bands-2 {
+        while j< config.num_bands-1 {
             to_ret.push(if energy_matrix[i][j] - energy_matrix[i][j+1] - (energy_matrix[i-1][j]-energy_matrix[i-1][j+1]) > 0.0 {
                 1u8
             }else{
@@ -117,7 +123,7 @@ fn fingerprint(data: &Vec<i16>, config: Config)->Vec<u8>{
         };
         i=i+1;  
     };
-   
+ //  println!("Fingerprint built");
     to_ret
     
 }
