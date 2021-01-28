@@ -3,7 +3,8 @@ use alsa::{Direction, ValueOr};
 use alsa::pcm::{PCM, HwParams, Format, Access, State};
 use hound;
 use std::fs::File;
-use std::io::Write;
+use std::io::Write
+use std::fs::OpenOptions;
 fn main() {
     let mut args = env::args();
     let _ = args.next(); //Throw away the filename
@@ -11,13 +12,15 @@ fn main() {
    // let out_dev_name = args.next().expect("Insufficient arguments.  Must provide output device");
     let wav_name = args.next().expect("Insufficient arguments.  Must provide filename to write wav to");
     let text_name = args.next().expect("Insufficient args.");
-   let buf = record(&dev_name);
-    write_wav(&wav_name, &buf);
+    for i in 1..100{
+   let buf = record(&dev_name, 573300);
+    //write_wav(&wav_name, &buf);
     write_txt(&text_name, &buf);
+    }
   // playback(&out_dev_name, buf);
 }
 
-fn record(dev_name: &str)->Vec<i16>{
+fn record(dev_name: &str, frames: usize)->Vec<i16>{
     let pcm = PCM::new(dev_name, Direction::Capture, false).unwrap();
    let hwp = HwParams::any(&pcm).unwrap();
 println!("Min channels: {}", hwp.get_channels_min().unwrap());
@@ -28,9 +31,9 @@ println!("Max channels: {}", hwp.get_channels_max().unwrap());
     hwp.set_access(Access::RWInterleaved).unwrap();
     pcm.hw_params(&hwp).unwrap();
     let io = pcm.io_i16().unwrap();
-
+    //Should probably separate setting up all this from the actual record
 	//enough space for 6.5 seconds of recording at 44100Hz with 2 channels
-    let mut buf = [0i16; 573300];
+    let mut buf = Vec<i16>::with_capacity(frames).as_slice();//[0i16; 573300];
     let reads=io.readi(&mut buf).unwrap();
     println!("Read {} frames", reads);
 //    println!("Received following data: {:#?}", buf);
@@ -65,11 +68,13 @@ fn write_wav(filename: &str, buf: &Vec<i16>)->(){
 
 }
 fn write_txt(filename: &str, buf: &Vec<i16>)->(){
-    let mut target = File::create(filename).unwrap();
+   //let mut target = File::create(filename).unwrap();
+   let mut target = OpenOptions::new().append(true).create(true).open(filename).unwrap();
     for i in 0..buf.len() {
         if{i%2==0}{
         target.write_all(buf[i].to_string().as_bytes());
-        target.write_all("\n".as_bytes());
+        //Line breaks appear to be undesirable
+        //target.write_all("\n".as_bytes());
         }
     }
 }
