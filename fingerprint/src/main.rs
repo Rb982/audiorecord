@@ -36,6 +36,7 @@ fn main() {
    let second_bits=fingerprint(second_data, &config);
    write_txt(&first_out, &first_bits);
    write_txt(&second_out, &second_bits);
+   println!("Vecs have truncated length {} and are different in {} locations", first_bits.len(), distance(&first_bits, &second_bits));
    /*for bit in &bits {
       print!("{}", bit);
    } 
@@ -44,7 +45,13 @@ fn main() {
   // println!("{:#?}", fourier(hanning_window(&test, test.len()), test.len()));
 
 }
-
+fn distance(first: &Vec<u8>, second: &Vec<u8>)->usize{
+    let mut sum =0;
+    for i in 0..first.len(){
+        if first[i]!=second[i] {sum = sum+1;}
+    }
+    sum
+}
 fn align(first: &Vec<i16>, second: &Vec<i16>)->usize {
     let mut offset = (0, 0);
     let max_len = if first.len() < second.len() { first.len() } else {second.len()};
@@ -156,9 +163,9 @@ fn write_txt(filename: &str, buf: &Vec<u8>)->(){
     let mut target = OpenOptions::new().append(true).create(true).open(filename).unwrap();
      for i in 0..buf.len() {
          if{i%2==0}{
-         target.write_all(buf[i].to_string().as_bytes());
+         target.write_all(buf[i].to_string().as_bytes()).unwrap();
          //Line breaks appear to be undesirable
-         target.write_all("\n".as_bytes());
+         target.write_all("\n".as_bytes()).unwrap();
          }
      }
  }
