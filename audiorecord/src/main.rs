@@ -74,7 +74,7 @@ fn write_txt(filename: &str, buf: &Vec<i16>)->(){
         if{i%2==0}{
         target.write_all(buf[i].to_string().as_bytes());
         //Line breaks appear to be undesirable
-        //target.write_all("\n".as_bytes());
+        target.write_all("\n".as_bytes());
         }
     }
 }

@@ -1,6 +1,9 @@
 
 use std::fs::File;
+use std::fs::OpenOptions;
 use std::io::{BufReader, BufRead};
+use std::io;
+use std::io::Write;
 use std::env;
 use rustfft;
 use rustfft::num_complex::Complex32;
@@ -8,35 +11,54 @@ use rustfft::num_complex::Complex32;
 
 struct Config {
     slice_size: usize,
-    min_freq: usize,
-    max_freq: usize,
     num_bands: usize,
-    sample_rate: usize,
 }
 
 fn main() {
     let config = Config{
         slice_size: 16537,
-        min_freq: 0,
-        max_freq: 20000,
         num_bands: 33,
-        sample_rate: 44100,
+        
     };
     let mut args = env::args();
     let _ = args.next();
-    let filename = args.next().expect("Argument missing; must provide filename");
+    let first_file = args.next().expect("Argument missing; must provide first input file");
+    let second_file= args.next().expect("Argument missing; must provide second input");
+    let first_out = args.next().expect("Argument missing; must provide first output");
+    let second_out = args.next().expect("Argument missing; must provide second output");
 
-   let mut test_data = read_file(&filename);
-   let bits = fingerprint(test_data, config);
-   for bit in &bits {
-      println!("{}", bit);
+   let mut first_data = read_file(&first_file);
+   let mut second_data = read_file(&second_file);
+   let offset = align(&first_data, &second_data);
+   second_data.drain(0..offset);
+   first_data.truncate(first_data.len()-offset);
+   let first_bits = fingerprint(first_data, &config);
+   let second_bits=fingerprint(second_data, &config);
+   write_txt(&first_out, &first_bits);
+   write_txt(&second_out, &second_bits);
+   /*for bit in &bits {
+      print!("{}", bit);
    } 
+   io::stdout().flush().unwrap()*/
    //println!("{:#?}", hanning_window(&test, test.len()));
   // println!("{:#?}", fourier(hanning_window(&test, test.len()), test.len()));
 
 }
 
-
+fn align(first: &Vec<i16>, second: &Vec<i16>)->usize {
+    let mut offset = (0, 0);
+    let max_len = if first.len() < second.len() { first.len() } else {second.len()};
+    for i in 0..max_len{
+        let mut cross_corr = 0;
+        for j in 0..(max_len-i){
+            cross_corr=cross_corr+(first[j]*second[i+j]);
+        }
+        if cross_corr> offset.1 {
+            offset = (i,cross_corr)
+        }
+    }
+    offset.0
+}
 fn hanning_window(input: &Vec<i16>, window_len: usize)->Vec<f32>{
     let mut i = 0;
     let mut to_ret = Vec::with_capacity(input.len());
@@ -55,14 +77,15 @@ fn read_file(filename: &str)->Vec<i16>{
     let mut to_ret=Vec::new();
     for line in reader.lines() {
         //to_ret.push(i16::from_str_radix(&line.unwrap(), 10).unwrap());
-        match i16::from_str_radix(&line.unwrap(), 10) {
+        let val = &line.unwrap();
+        match i16::from_str_radix(val, 10) {
             Ok(t) => to_ret.push(t),
-            Err(e) => println!("{}", e)
+            Err(e) => println!("In read file,{} {}", val, e)
         };
     } 
     to_ret
 }
-fn fourier(mut data:Vec<f32>, slice_size: usize)->Vec<Complex32>{
+fn fourier(data:Vec<f32>, slice_size: usize)->Vec<Complex32>{
    // println!("Starting Fourier");
     
     
@@ -80,7 +103,7 @@ fn fourier(mut data:Vec<f32>, slice_size: usize)->Vec<Complex32>{
     buffer.to_vec()
 }
 //Let's define a struct that has al the config data; 5 usizes in a row is super clunky.
-fn fingerprint(mut data: Vec<i16>, config: Config)->Vec<u8>{
+fn fingerprint(mut data: Vec<i16>, config: &Config)->Vec<u8>{
     //Probably should end up with this back inside the call to fourier, and just replace calls to data.len() with transformed.len()
     if {data.len()%config.slice_size !=0} {
         data.truncate(data.len()-data.len()%config.slice_size);
@@ -127,3 +150,16 @@ fn fingerprint(mut data: Vec<i16>, config: Config)->Vec<u8>{
     to_ret
     
 }
+
+fn write_txt(filename: &str, buf: &Vec<u8>)->(){
+    //let mut target = File::create(filename).unwrap();
+    let mut target = OpenOptions::new().append(true).create(true).open(filename).unwrap();
+     for i in 0..buf.len() {
+         if{i%2==0}{
+         target.write_all(buf[i].to_string().as_bytes());
+         //Line breaks appear to be undesirable
+         target.write_all("\n".as_bytes());
+         }
+     }
+ }
+ 
