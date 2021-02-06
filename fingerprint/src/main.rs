@@ -28,14 +28,22 @@ fn main() {
     let second_out = args.next().expect("Argument missing; must provide second output");
 
    let mut first_data = read_file(&first_file);
+   //println!("First read completed");
    let mut second_data = read_file(&second_file);
+  // println!("Files read");
    let offset = align(&first_data, &second_data);
+   println!("Inputs aligned");
    second_data.drain(0..offset);
    first_data.truncate(first_data.len()-offset);
+   println!("Vec lengths are {} {}", first_data.len(), second_data.len());
    let first_bits = fingerprint(first_data, &config);
+   println!("First fingerprint completed");
    let second_bits=fingerprint(second_data, &config);
+   println!("Second fingerprint completed");
    write_txt(&first_out, &first_bits);
+   println!("First write completed");
    write_txt(&second_out, &second_bits);
+   println!("Second write completed");
    println!("Vecs have truncated length {} and are different in {} locations", first_bits.len(), distance(&first_bits, &second_bits));
    /*for bit in &bits {
       print!("{}", bit);
@@ -53,15 +61,19 @@ fn distance(first: &Vec<u8>, second: &Vec<u8>)->usize{
     sum
 }
 fn align(first: &Vec<i16>, second: &Vec<i16>)->usize {
-    let mut offset = (0, 0);
+    let mut offset = (0, 0isize);
     let max_len = if first.len() < second.len() { first.len() } else {second.len()};
-    for i in 0..max_len{
-        let mut cross_corr = 0;
-        for j in 0..(max_len-i){
-            cross_corr=cross_corr+(first[j]*second[i+j]);
+    let max_offset = if max_len < 441000 { max_len } else {441000};
+    for i in 0..max_offset{
+        let mut cross_corr = 0isize;
+        for j in 0..(max_offset){
+            cross_corr=cross_corr+(first[j] as isize*second[i+j] as isize);
         }
         if cross_corr> offset.1 {
             offset = (i,cross_corr)
+        }
+        if i % 1000 ==0 {
+        println!("Value of i: {}", i);
         }
     }
     offset.0
