@@ -25,6 +25,10 @@ fn main() {
     
     let mut args = env::args();
     let _ = args.next();
+    let addr =args.next().unwrap();
+    let dev_name = args.next().unwrap();
+    //Since we're just reading instead of recording, dev_name will be a file and frames will go unused
+    try_pair(&addr, &dev_name, 0, &config);/*
     let first_file = args.next().expect("Argument missing; must provide first input file");
     //let second_file= args.next().expect("Argument missing; must provide second input");
     let first_out = args.next().expect("Argument missing; must provide first output");
@@ -75,7 +79,7 @@ fn main() {
    io::stdout().flush().unwrap()
    //println!("{:#?}", hanning_window(&test, test.len()));
   // println!("{:#?}", fourier(hanning_window(&test, test.len()), test.len()));
-*/
+*/*/
 
 }
 fn distance(first: &Vec<u8>, second: &Vec<u8>)->usize{
@@ -236,20 +240,22 @@ fn try_pair(addr: &str, dev_name: &str, frames: usize, config: &Config)->(){
 //probably this should be a std::io:Result instead of a std::Result
 
 fn rec_pair(addr: &str, dev_name: &str, frames:usize, config: &Config)->(){
-    todo!();
+    //todo!();
     let listener = TcpListener::bind(addr).unwrap();
     'outer: for stream in listener.incoming() {
-        let stream = stream.unwrap();
-        let mut buf= Vec::with_capacity(1).as_mut_slice();
+        let mut stream = stream.unwrap();
+        let mut buf= Vec::with_capacity(1);
+        let mut buf = buf.as_mut_slice();
         match stream.read(&mut buf){
             Ok(_)=>break 'outer,
             Err(_)=>continue,
         };
     }
     let mut data = record(dev_name, frames);
-    let mut buffer = Vec::with_capacity(data.len()*2).as_mut_slice();
-    for stream in listener.incoming(){
-        let stream = stream.unwrap();
+    let mut buffer = Vec::with_capacity(data.len()*2);
+    let mut buffer = buffer.as_mut_slice();
+    'outer: for stream in listener.incoming(){
+        let mut stream = stream.unwrap();
         match stream.read(&mut buffer){
             Ok(t)=>{
                 unsafe{
@@ -259,7 +265,7 @@ fn rec_pair(addr: &str, dev_name: &str, frames:usize, config: &Config)->(){
                 }
                 let fp = fingerprint(data, config);
                 println!("{:#?}", fp);
-
+                break 'outer;
             },
             Err(_)=>continue
         }
@@ -268,5 +274,5 @@ fn rec_pair(addr: &str, dev_name: &str, frames:usize, config: &Config)->(){
 }
 
 fn record(dev_name: &str, frames: usize)->Vec<i16>{
-    todo!();
+    read_file(dev_name)
 }
