@@ -3,10 +3,12 @@ use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::{BufReader, BufRead};
 use std::io;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::env;
 use rustfft;
 use rustfft::num_complex::Complex32;
+use std::net::{TcpStream, TcpListener};
+
 //use bitvec::vec::BitVec;
 
 struct Config {
@@ -20,15 +22,34 @@ fn main() {
         num_bands: 33,
         
     };
+    
     let mut args = env::args();
     let _ = args.next();
     let first_file = args.next().expect("Argument missing; must provide first input file");
-    let second_file= args.next().expect("Argument missing; must provide second input");
+    //let second_file= args.next().expect("Argument missing; must provide second input");
     let first_out = args.next().expect("Argument missing; must provide first output");
-    let second_out = args.next().expect("Argument missing; must provide second output");
-
-   let mut first_data = read_file(&first_file);
-   //println!("First read completed");
+    //let second_out = args.next().expect("Argument missing; must provide second output");
+    let f = File::open(&first_file).expect("Failed to open file.");
+    let mut lines = BufReader::new(f).lines();
+    'outer: loop{
+    let mut data=Vec::with_capacity(config.slice_size*60);
+   
+    for i in 0..config.slice_size*60 {
+        //to_ret.push(i16::from_str_radix(&line.unwrap(), 10).unwrap());
+        match lines.next(){
+            Some(val)=> match i16::from_str_radix(&val.unwrap(), 10){
+                Ok(t) => data.push(t),
+                Err(e) =>println!("In read file {}", e)
+            },
+            //Right now, tossing away up to 22 seconds of data; not long-term good but fine for now
+            None=>break 'outer
+        };
+    }; 
+   //let mut first_data = read_file(&first_file);
+   let first_bits = fingerprint(data, &config);
+   write_txt(&first_out, first_bits);
+    }
+  /* println!("First read completed");
    let mut second_data = read_file(&second_file);
   // println!("Files read");
    let offset = align(&first_data, &second_data);
@@ -36,21 +57,25 @@ fn main() {
    second_data.drain(0..offset);
    first_data.truncate(first_data.len()-offset);
    println!("Vec lengths are {} {}", first_data.len(), second_data.len());
+   for i in 1..1000 {
+       println!("{} {}", first_data[i], second_data[i])
+   }
    let first_bits = fingerprint(first_data, &config);
    println!("First fingerprint completed");
    let second_bits=fingerprint(second_data, &config);
    println!("Second fingerprint completed");
-   write_txt(&first_out, &first_bits);
+  // write_txt(&first_out, &first_bits);
    println!("First write completed");
-   write_txt(&second_out, &second_bits);
+   //write_txt(&second_out, &second_bits);
    println!("Second write completed");
    println!("Vecs have truncated length {} and are different in {} locations", first_bits.len(), distance(&first_bits, &second_bits));
    /*for bit in &bits {
       print!("{}", bit);
-   } 
-   io::stdout().flush().unwrap()*/
+   } */
+   io::stdout().flush().unwrap()
    //println!("{:#?}", hanning_window(&test, test.len()));
   // println!("{:#?}", fourier(hanning_window(&test, test.len()), test.len()));
+*/
 
 }
 fn distance(first: &Vec<u8>, second: &Vec<u8>)->usize{
@@ -72,9 +97,7 @@ fn align(first: &Vec<i16>, second: &Vec<i16>)->usize {
         if cross_corr> offset.1 {
             offset = (i,cross_corr)
         }
-        if i % 1000 ==0 {
-        println!("Value of i: {}", i);
-        }
+       
     }
     offset.0
 }
@@ -170,15 +193,80 @@ fn fingerprint(mut data: Vec<i16>, config: &Config)->Vec<u8>{
     
 }
 
-fn write_txt(filename: &str, buf: &Vec<u8>)->(){
+fn write_txt(filename: &str, buf: Vec<u8>)->(){
     //let mut target = File::create(filename).unwrap();
     let mut target = OpenOptions::new().append(true).create(true).open(filename).unwrap();
      for i in 0..buf.len() {
          if{i%2==0}{
          target.write_all(buf[i].to_string().as_bytes()).unwrap();
          //Line breaks appear to be undesirable
-         target.write_all("\n".as_bytes()).unwrap();
+         //target.write_all("\n".as_bytes()).unwrap();
          }
      }
  }
  
+
+ //Network logic starts here
+
+fn try_pair(addr: &str, dev_name: &str, frames: usize, config: &Config)->(){
+    //let mut buf: [u8; 264600] = [0; 264600];
+    if let Ok(mut stream) = TcpStream::connect(addr) {
+        println!("Connected");
+        let buf=[0; 1];
+        stream.write(&buf).unwrap();
+        let mut pair_data = record(dev_name, frames);
+        let fp_data = pair_data.split_off(132300);
+        //pair_data=pair_data.iterator().map(|x| x.to_ne_bytes).flatten().collect();
+        unsafe{
+            //I think this lets me cast my original vec of i16s to u8s, but might be wrong
+            //Definitely feels unidiomatic
+            let to_send: Vec<u8> = Vec::from_raw_parts(pair_data.as_mut_ptr() as *mut u8, pair_data.len()*2, pair_data.capacity()*2);
+            stream.write(&to_send).unwrap();
+        }
+        let res=fingerprint(fp_data, config);
+        println!("{:#?}", res);
+
+
+    }else{
+        panic!("No connection");
+    }
+
+
+}
+//probably this should be a std::io:Result instead of a std::Result
+
+fn rec_pair(addr: &str, dev_name: &str, frames:usize, config: &Config)->(){
+    todo!();
+    let listener = TcpListener::bind(addr).unwrap();
+    'outer: for stream in listener.incoming() {
+        let stream = stream.unwrap();
+        let mut buf= Vec::with_capacity(1).as_mut_slice();
+        match stream.read(&mut buf){
+            Ok(_)=>break 'outer,
+            Err(_)=>continue,
+        };
+    }
+    let mut data = record(dev_name, frames);
+    let mut buffer = Vec::with_capacity(data.len()*2).as_mut_slice();
+    for stream in listener.incoming(){
+        let stream = stream.unwrap();
+        match stream.read(&mut buffer){
+            Ok(t)=>{
+                unsafe{
+                    let received_data: Vec<i16> = Vec::from_raw_parts(buffer.as_mut_ptr() as *mut i16, buffer.len()/2, buffer.len()/2);
+                    let offset=align(&received_data, &data);
+                    data.drain(0..offset);
+                }
+                let fp = fingerprint(data, config);
+                println!("{:#?}", fp);
+
+            },
+            Err(_)=>continue
+        }
+    }
+
+}
+
+fn record(dev_name: &str, frames: usize)->Vec<i16>{
+    todo!();
+}
