@@ -3,9 +3,8 @@ use alsa::{Direction, ValueOr};
 use alsa::pcm::{PCM, HwParams, Format, Access, State};
 use hound;
 use std::fs::File;
-use std::io::Write
+use std::io::Write;
 use std::fs::OpenOptions;
-
 fn main() {
     let mut args = env::args();
     let _ = args.next(); //Throw away the filename
@@ -34,11 +33,13 @@ println!("Max channels: {}", hwp.get_channels_max().unwrap());
     let io = pcm.io_i16().unwrap();
     //Should probably separate setting up all this from the actual record
 	//enough space for 6.5 seconds of recording at 44100Hz with 2 channels
-    let mut buf = Vec<i16>::with_capacity(frames).as_slice();//[0i16; 573300];
-    let reads=io.readi(&mut buf).unwrap();
+    let mut buf: Vec<i16> = Vec::with_capacity(frames);//[0i16; 573300];
+	let mut buf_s = buf.as_mut_slice();
+    let reads=io.readi(&mut buf_s).unwrap();
     println!("Read {} frames", reads);
+	buf
 //    println!("Received following data: {:#?}", buf);
-    boxed::Box::new(buf).to_vec()
+   // boxed::Box::new(buf).to_vec()
 }
 pub fn playback(dev_name: &str, buf: &Vec<i16>)->(){
     let writePCM=PCM::new(dev_name, Direction::Playback, false).unwrap();
@@ -79,3 +80,4 @@ pub fn write_txt(filename: &str, buf: &Vec<i16>)->(){
         }
     }
 }
+

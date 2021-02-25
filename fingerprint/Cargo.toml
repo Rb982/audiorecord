@@ -8,3 +8,5 @@ edition = "2018"
 
 [dependencies]
 rustfft="5.0.1"
+alsa="0.4.3"
+hound="3.4.0"
