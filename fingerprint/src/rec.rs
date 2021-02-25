@@ -34,6 +34,7 @@ println!("Max channels: {}", hwp.get_channels_max().unwrap());
     //Should probably separate setting up all this from the actual record
 	//enough space for 6.5 seconds of recording at 44100Hz with 2 channels
     let mut buf: Vec<i16> = Vec::with_capacity(frames);//[0i16; 573300];
+	buf.resize(frames, 0);
 	let mut buf_s = buf.as_mut_slice();
     let reads=io.readi(&mut buf_s).unwrap();
     println!("Read {} frames", reads);

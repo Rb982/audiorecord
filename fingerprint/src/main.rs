@@ -9,6 +9,7 @@ use rustfft;
 use rustfft::num_complex::Complex32;
 use std::net::{TcpStream, TcpListener};
 mod rec;
+use std::convert::TryInto;
 //use bitvec::vec::BitVec;
 
 struct Config {
@@ -32,7 +33,7 @@ fn main() {
     let addr =args.next().expect("arg missing");
     let dev_name = args.next().expect("arg missing");
     //Since we're just reading instead of recording, dev_name will be a file and frames will go unused
-    try_pair(&addr, &dev_name, 0, &config);/*
+    rec_pair(&addr, &dev_name, 0, &config);/*
     let first_file = args.next().expect("Argument missing; must provide first input file");
     //let second_file= args.next().expect("Argument missing; must provide second input");
     let first_out = args.next().expect("Argument missing; must provide first output");
@@ -230,11 +231,11 @@ fn try_pair(addr: &str, dev_name: &str, frames: usize, config: &Config)->(){
             'outer: loop{
             match stream.read(&mut buffer){
                 Ok(t)=>{
-                    unsafe{
-                        let received_data: Vec<i16> = Vec::from_raw_parts(buffer.as_mut_ptr() as *mut i16, buffer.len()/2, buffer.len()/2);
+//                    unsafe{
+                        let received_data: Vec<i16> = to_i16(buffer);//Vec::from_raw_parts(buffer.as_mut_ptr() as *mut i16, buffer.len()/2, buffer.len()/2);
                         let offset=align(&received_data, &data);
                         data.drain(0..(offset+received_data.len()));
-                    }
+  //                  }
                     let fp = fingerprint(data, config);
                     println!("{:#?}", fp);
                     break 'outer;
@@ -261,10 +262,10 @@ fn rec_pair(addr: &str, dev_name: &str, frames:usize, config: &Config)->(){
                 let mut pair_data = rec::record(dev_name, config.rec_frames);
                 let fp_data = pair_data.split_off(config.pair_frames);
                 //pair_data=pair_data.iterator().map(|x| x.to_ne_bytes).flatten().collect();
-                unsafe{
+             
                     //I think this lets me cast my original vec of i16s to u8s, but might be wrong
                     //Definitely feels unidiomatic
-                    let to_send: Vec<u8> = Vec::from_raw_parts(pair_data.as_mut_ptr() as *mut u8, pair_data.len()*2, pair_data.capacity()*2);
+                    let to_send: Vec<u8> = to_u8(pair_data);//Vec::from_raw_parts(pair_data.as_mut_ptr() as *mut u8, pair_data.len()*2, pair_data.capacity()*2);
                     match stream.write(&to_send){
                         Ok(t) => println!("Wrote data successfully"),
                         Err(e) => {println!("{:#?}", e);
@@ -272,7 +273,7 @@ fn rec_pair(addr: &str, dev_name: &str, frames:usize, config: &Config)->(){
                         }
                     };
                    // .expect("Error writing stream in unsafe part of try_pair");
-                }
+                
                 let res=fingerprint(fp_data, config);
                 println!("{:#?}", res);
                 return;
@@ -301,11 +302,11 @@ fn record(dev_name: &str, frames: usize)->Vec<i16>{
                 //let mut stream = stream.expect("Failed to unwrap stream in rec_pair");
                 match stream.read(&mut buffer){
                     Ok(t)=>{
-                        unsafe{
-                            let received_data: Vec<i16> = Vec::from_raw_parts(buffer.as_mut_ptr() as *mut i16, buffer.len()/2, buffer.len()/2);
+     
+                            let received_data: Vec<i16> = to_i16(buffer);//Vec::from_raw_parts(buffer.as_mut_ptr() as *mut i16, buffer.len()/2, buffer.len()/2);
                             let offset=align(&received_data, &data);
                             data.drain(0..(offset+received_data.len()));
-                        }
+                        
                         let fp = fingerprint(data, config);
                         println!("{:#?}", fp);
                         break 'outer;
@@ -314,3 +315,20 @@ fn record(dev_name: &str, frames: usize)->Vec<i16>{
                 };
 
 */
+fn to_u8(input: Vec<i16>)->Vec<u8>{
+	let mut to_ret:Vec<u8> = Vec::with_capacity(input.len()*2);
+	for i in 0..input.len(){
+		let temp = input[i].to_be_bytes();
+		for j in 0..temp.len(){
+			to_ret.push(temp[j]);
+		}
+	}
+	to_ret
+}
+fn to_i16(input: &[u8])->Vec<i16>{
+	let mut to_ret = Vec::with_capacity(input.len()/2);
+	for chunk in input.chunks_exact(2) {
+		to_ret.push(i16::from_be_bytes(chunk.try_into().unwrap()));
+	}
+	to_ret
+}
