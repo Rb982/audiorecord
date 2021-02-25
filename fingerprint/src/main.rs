@@ -8,7 +8,7 @@ use std::env;
 use rustfft;
 use rustfft::num_complex::Complex32;
 use std::net::{TcpStream, TcpListener};
-
+mod rec;
 //use bitvec::vec::BitVec;
 
 struct Config {
@@ -22,8 +22,8 @@ fn main() {
     let config = Config{
         slice_size: 16537,
         num_bands: 33,
-        rec_frames: 0,
-        pair_frames: 0
+        rec_frames: 441000,
+        pair_frames: 132300
         
     };
     
@@ -222,7 +222,7 @@ fn try_pair(addr: &str, dev_name: &str, frames: usize, config: &Config)->(){
         println!("Connected");
         let buf=[0; 1];
         stream.write(&buf).expect("Error writing stream initial in try_pair");
-        let mut data = record(dev_name, config.rec_frames);
+        let mut data = rec::record(dev_name, config.rec_frames);
         let mut buffer = Vec::with_capacity(config.pair_frames*2);
         let mut buffer = buffer.as_mut_slice();
         
@@ -252,13 +252,13 @@ fn try_pair(addr: &str, dev_name: &str, frames: usize, config: &Config)->(){
 fn rec_pair(addr: &str, dev_name: &str, frames:usize, config: &Config)->(){
     //todo!();
     let listener = TcpListener::bind(addr).expect("Failed to bind");
-    'outer: for stream in listener.incoming() {
+    for stream in listener.incoming() {
         let mut stream = stream.unwrap();//.expect("Failed to unwrap stream in rec_pair");
         let mut buf= Vec::with_capacity(1);
         let mut buf = buf.as_mut_slice();
         match stream.read(&mut buf){
             Ok(_)=>{
-                let mut pair_data = record(dev_name, config.rec_frames);
+                let mut pair_data = rec::record(dev_name, config.rec_frames);
                 let fp_data = pair_data.split_off(config.pair_frames);
                 //pair_data=pair_data.iterator().map(|x| x.to_ne_bytes).flatten().collect();
                 unsafe{
@@ -275,7 +275,7 @@ fn rec_pair(addr: &str, dev_name: &str, frames:usize, config: &Config)->(){
                 }
                 let res=fingerprint(fp_data, config);
                 println!("{:#?}", res);
-                break 'outer;
+                return;
         
             }
             
