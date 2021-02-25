@@ -3,7 +3,7 @@ use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::{BufReader, BufRead};
 use std::io;
-use std::io::{Read, Write};
+use std::io::{Read, Write, Result};
 use std::env;
 use rustfft;
 use rustfft::num_complex::Complex32;
@@ -14,19 +14,23 @@ use std::net::{TcpStream, TcpListener};
 struct Config {
     slice_size: usize,
     num_bands: usize,
+    rec_frames: usize,
+    pair_frames: usize
 }
 
 fn main() {
     let config = Config{
         slice_size: 16537,
         num_bands: 33,
+        rec_frames: 0,
+        pair_frames: 0
         
     };
     
     let mut args = env::args();
     let _ = args.next();
-    let addr =args.next().unwrap();
-    let dev_name = args.next().unwrap();
+    let addr =args.next().expect("arg missing");
+    let dev_name = args.next().expect("arg missing");
     //Since we're just reading instead of recording, dev_name will be a file and frames will go unused
     try_pair(&addr, &dev_name, 0, &config);/*
     let first_file = args.next().expect("Argument missing; must provide first input file");
@@ -123,7 +127,7 @@ fn read_file(filename: &str)->Vec<i16>{
     let mut to_ret=Vec::new();
     for line in reader.lines() {
         //to_ret.push(i16::from_str_radix(&line.unwrap(), 10).unwrap());
-        let val = &line.unwrap();
+        let val = &line.expect("Error reading file");
         match i16::from_str_radix(val, 10) {
             Ok(t) => to_ret.push(t),
             Err(e) => println!("In read file,{} {}", val, e)
@@ -142,7 +146,7 @@ fn fourier(data:Vec<f32>, slice_size: usize)->Vec<Complex32>{
     let mut buffer = Vec::with_capacity(data.len());
     let mut i = 0;
     while i<data.len() {
-        buffer.push(Complex32::new(*data.get(i).unwrap(), 0.0));
+        buffer.push(Complex32::new(*data.get(i).expect("Error building FFT input buffer"), 0.0));
         i=i+1;
     }
     plan.process(&mut buffer);
@@ -199,10 +203,10 @@ fn fingerprint(mut data: Vec<i16>, config: &Config)->Vec<u8>{
 
 fn write_txt(filename: &str, buf: Vec<u8>)->(){
     //let mut target = File::create(filename).unwrap();
-    let mut target = OpenOptions::new().append(true).create(true).open(filename).unwrap();
+    let mut target = OpenOptions::new().append(true).create(true).open(filename).expect("Error opening file to write");
      for i in 0..buf.len() {
          if{i%2==0}{
-         target.write_all(buf[i].to_string().as_bytes()).unwrap();
+         target.write_all(buf[i].to_string().as_bytes()).expect("Error writing file");
          //Line breaks appear to be undesirable
          //target.write_all("\n".as_bytes()).unwrap();
          }
@@ -217,19 +221,27 @@ fn try_pair(addr: &str, dev_name: &str, frames: usize, config: &Config)->(){
     if let Ok(mut stream) = TcpStream::connect(addr) {
         println!("Connected");
         let buf=[0; 1];
-        stream.write(&buf).unwrap();
-        let mut pair_data = record(dev_name, frames);
-        let fp_data = pair_data.split_off(132300);
-        //pair_data=pair_data.iterator().map(|x| x.to_ne_bytes).flatten().collect();
-        unsafe{
-            //I think this lets me cast my original vec of i16s to u8s, but might be wrong
-            //Definitely feels unidiomatic
-            let to_send: Vec<u8> = Vec::from_raw_parts(pair_data.as_mut_ptr() as *mut u8, pair_data.len()*2, pair_data.capacity()*2);
-            stream.write(&to_send).unwrap();
+        stream.write(&buf).expect("Error writing stream initial in try_pair");
+        let mut data = record(dev_name, config.rec_frames);
+        let mut buffer = Vec::with_capacity(config.pair_frames*2);
+        let mut buffer = buffer.as_mut_slice();
+        
+            //let mut stream = stream.expect("Failed to unwrap stream in rec_pair");
+            'outer: loop{
+            match stream.read(&mut buffer){
+                Ok(t)=>{
+                    unsafe{
+                        let received_data: Vec<i16> = Vec::from_raw_parts(buffer.as_mut_ptr() as *mut i16, buffer.len()/2, buffer.len()/2);
+                        let offset=align(&received_data, &data);
+                        data.drain(0..(offset+received_data.len()));
+                    }
+                    let fp = fingerprint(data, config);
+                    println!("{:#?}", fp);
+                    break 'outer;
+                },
+                Err(_)=>continue
+            };
         }
-        let res=fingerprint(fp_data, config);
-        println!("{:#?}", res);
-
 
     }else{
         panic!("No connection");
@@ -237,42 +249,68 @@ fn try_pair(addr: &str, dev_name: &str, frames: usize, config: &Config)->(){
 
 
 }
-//probably this should be a std::io:Result instead of a std::Result
-
 fn rec_pair(addr: &str, dev_name: &str, frames:usize, config: &Config)->(){
     //todo!();
-    let listener = TcpListener::bind(addr).unwrap();
+    let listener = TcpListener::bind(addr).expect("Failed to bind");
     'outer: for stream in listener.incoming() {
-        let mut stream = stream.unwrap();
+        let mut stream = stream.unwrap();//.expect("Failed to unwrap stream in rec_pair");
         let mut buf= Vec::with_capacity(1);
         let mut buf = buf.as_mut_slice();
         match stream.read(&mut buf){
-            Ok(_)=>break 'outer,
+            Ok(_)=>{
+                let mut pair_data = record(dev_name, config.rec_frames);
+                let fp_data = pair_data.split_off(config.pair_frames);
+                //pair_data=pair_data.iterator().map(|x| x.to_ne_bytes).flatten().collect();
+                unsafe{
+                    //I think this lets me cast my original vec of i16s to u8s, but might be wrong
+                    //Definitely feels unidiomatic
+                    let to_send: Vec<u8> = Vec::from_raw_parts(pair_data.as_mut_ptr() as *mut u8, pair_data.len()*2, pair_data.capacity()*2);
+                    match stream.write(&to_send){
+                        Ok(t) => println!("Wrote data successfully"),
+                        Err(e) => {println!("{:#?}", e);
+                        panic!("Unexpected error in try_pair");
+                        }
+                    };
+                   // .expect("Error writing stream in unsafe part of try_pair");
+                }
+                let res=fingerprint(fp_data, config);
+                println!("{:#?}", res);
+                break 'outer;
+        
+            }
+            
+        
             Err(_)=>continue,
         };
     }
-    let mut data = record(dev_name, frames);
-    let mut buffer = Vec::with_capacity(data.len()*2);
-    let mut buffer = buffer.as_mut_slice();
-    'outer: for stream in listener.incoming(){
-        let mut stream = stream.unwrap();
-        match stream.read(&mut buffer){
-            Ok(t)=>{
-                unsafe{
-                    let received_data: Vec<i16> = Vec::from_raw_parts(buffer.as_mut_ptr() as *mut i16, buffer.len()/2, buffer.len()/2);
-                    let offset=align(&received_data, &data);
-                    data.drain(0..offset);
-                }
-                let fp = fingerprint(data, config);
-                println!("{:#?}", fp);
-                break 'outer;
-            },
-            Err(_)=>continue
-        }
-    }
-
+   
 }
-
+//Reading a file instead of actually recording because alsa library only compiles on linux
 fn record(dev_name: &str, frames: usize)->Vec<i16>{
     read_file(dev_name)
 }
+
+
+/*
+
+            
+            let mut data = record(dev_name, config.rec_frames);
+            let mut buffer = Vec::with_capacity(config.pair_frames*2);
+            let mut buffer = buffer.as_mut_slice();
+            
+                //let mut stream = stream.expect("Failed to unwrap stream in rec_pair");
+                match stream.read(&mut buffer){
+                    Ok(t)=>{
+                        unsafe{
+                            let received_data: Vec<i16> = Vec::from_raw_parts(buffer.as_mut_ptr() as *mut i16, buffer.len()/2, buffer.len()/2);
+                            let offset=align(&received_data, &data);
+                            data.drain(0..(offset+received_data.len()));
+                        }
+                        let fp = fingerprint(data, config);
+                        println!("{:#?}", fp);
+                        break 'outer;
+                    },
+                    Err(_)=>continue
+                };
+
+*/
