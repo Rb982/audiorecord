@@ -16,7 +16,8 @@ struct Config {
     slice_size: usize,
     num_bands: usize,
     rec_frames: usize,
-    pair_frames: usize
+    pair_frames: usize,
+    key_len: usize
 }
 
 fn main() {
@@ -24,7 +25,8 @@ fn main() {
         slice_size: 16537,
         num_bands: 33,
         rec_frames: 441000,
-        pair_frames: 132300
+        pair_frames: 132300,
+        key_len: 512
         
     };
     
@@ -32,7 +34,6 @@ fn main() {
     let _ = args.next();
     let addr =args.next().expect("arg missing");
     let dev_name = args.next().expect("arg missing");
-    //Since we're just reading instead of recording, dev_name will be a file and frames will go unused
     rec_pair(&addr, &dev_name, 0, &config);/*
     let first_file = args.next().expect("Argument missing; must provide first input file");
     //let second_file= args.next().expect("Argument missing; must provide second input");
@@ -153,7 +154,7 @@ fn fourier(data:Vec<f32>, slice_size: usize)->Vec<Complex32>{
     plan.process(&mut buffer);
     buffer.to_vec()
 }
-//Let's define a struct that has al the config data; 5 usizes in a row is super clunky.
+
 fn fingerprint(mut data: Vec<i16>, config: &Config)->Vec<u8>{
     //Probably should end up with this back inside the call to fourier, and just replace calls to data.len() with transformed.len()
     if {data.len()%config.slice_size !=0} {
@@ -223,6 +224,7 @@ fn try_pair(addr: &str, dev_name: &str, frames: usize, config: &Config)->(){
         println!("Connected");
         let buf=[0; 1];
         stream.write(&buf).expect("Error writing stream initial in try_pair");
+        
         let mut data = rec::record(dev_name, config.rec_frames);
         let mut buffer = Vec::with_capacity(config.pair_frames*2);
         let mut buffer = buffer.as_mut_slice();
@@ -236,8 +238,10 @@ fn try_pair(addr: &str, dev_name: &str, frames: usize, config: &Config)->(){
                         let offset=align(&received_data, &data);
                         data.drain(0..(offset+received_data.len()));
   //                  }
-                    let fp = fingerprint(data, config);
-                    println!("{:#?}", fp);
+                    let mut fp = fingerprint(data, config);
+                    fp.resize(config.key_len, 0);
+                    write_txt("./sender_key.txt", fp);
+                    //println!("{:#?}", fp);
                     break 'outer;
                 },
                 Err(_)=>continue
@@ -274,8 +278,10 @@ fn rec_pair(addr: &str, dev_name: &str, frames:usize, config: &Config)->(){
                     };
                    // .expect("Error writing stream in unsafe part of try_pair");
                 
-                let res=fingerprint(fp_data, config);
-                println!("{:#?}", res);
+                let mut res=fingerprint(fp_data, config);
+                res.resize(config.key_len, 0);
+                //println!("{:#?}", res);
+                write_txt("./receiver_key.txt", res)
                 return;
         
             }
@@ -286,35 +292,6 @@ fn rec_pair(addr: &str, dev_name: &str, frames:usize, config: &Config)->(){
     }
    
 }
-//Reading a file instead of actually recording because alsa library only compiles on linux
-fn record(dev_name: &str, frames: usize)->Vec<i16>{
-    read_file(dev_name)
-}
-
-
-/*
-
-            
-            let mut data = record(dev_name, config.rec_frames);
-            let mut buffer = Vec::with_capacity(config.pair_frames*2);
-            let mut buffer = buffer.as_mut_slice();
-            
-                //let mut stream = stream.expect("Failed to unwrap stream in rec_pair");
-                match stream.read(&mut buffer){
-                    Ok(t)=>{
-     
-                            let received_data: Vec<i16> = to_i16(buffer);//Vec::from_raw_parts(buffer.as_mut_ptr() as *mut i16, buffer.len()/2, buffer.len()/2);
-                            let offset=align(&received_data, &data);
-                            data.drain(0..(offset+received_data.len()));
-                        
-                        let fp = fingerprint(data, config);
-                        println!("{:#?}", fp);
-                        break 'outer;
-                    },
-                    Err(_)=>continue
-                };
-
-*/
 fn to_u8(input: Vec<i16>)->Vec<u8>{
 	let mut to_ret:Vec<u8> = Vec::with_capacity(input.len()*2);
 	for i in 0..input.len(){
