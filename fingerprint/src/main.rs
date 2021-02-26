@@ -34,7 +34,12 @@ fn main() {
     let _ = args.next();
     let addr =args.next().expect("arg missing");
     let dev_name = args.next().expect("arg missing");
-    rec_pair(&addr, &dev_name, 0, &config);/*
+    let mut i = 0;
+    loop{
+    rec_pair(&addr, &dev_name, &config);
+    i=i+1;
+    println!{"{}", i};
+    }/*
     let first_file = args.next().expect("Argument missing; must provide first input file");
     //let second_file= args.next().expect("Argument missing; must provide second input");
     let first_out = args.next().expect("Argument missing; must provide first output");
@@ -207,19 +212,17 @@ fn write_txt(filename: &str, buf: Vec<u8>)->(){
     //let mut target = File::create(filename).unwrap();
     let mut target = OpenOptions::new().append(true).create(true).open(filename).expect("Error opening file to write");
      for i in 0..buf.len() {
-         if{i%2==0}{
          target.write_all(buf[i].to_string().as_bytes()).expect("Error writing file");
          //Line breaks appear to be undesirable
          //target.write_all("\n".as_bytes()).unwrap();
-         }
+         
      }
  }
  
 
  //Network logic starts here
 
-fn try_pair(addr: &str, dev_name: &str, frames: usize, config: &Config)->(){
-    //let mut buf: [u8; 264600] = [0; 264600];
+fn try_pair(addr: &str, dev_name: &str,config: &Config)->(){
     if let Ok(mut stream) = TcpStream::connect(addr) {
         println!("Connected");
         let buf=[0; 1];
@@ -228,16 +231,14 @@ fn try_pair(addr: &str, dev_name: &str, frames: usize, config: &Config)->(){
         let mut data = rec::record(dev_name, config.rec_frames);
         let mut buffer = Vec::with_capacity(config.pair_frames*2);
         let mut buffer = buffer.as_mut_slice();
-        
-            //let mut stream = stream.expect("Failed to unwrap stream in rec_pair");
-            'outer: loop{
+        'outer: loop{
             match stream.read(&mut buffer){
                 Ok(t)=>{
-//                    unsafe{
-                        let received_data: Vec<i16> = to_i16(buffer);//Vec::from_raw_parts(buffer.as_mut_ptr() as *mut i16, buffer.len()/2, buffer.len()/2);
-                        let offset=align(&received_data, &data);
-                        data.drain(0..(offset+received_data.len()));
-  //                  }
+                    println!("Received {} bytes", t);
+                    let received_data: Vec<i16> = to_i16(buffer);//Vec::from_raw_parts(buffer.as_mut_ptr() as *mut i16, buffer.len()/2, buffer.len()/2);
+                    let offset=align(&received_data, &data);
+                    println!("Offset: {}", offset);
+                    data.drain(0..(offset+received_data.len()));
                     let mut fp = fingerprint(data, config);
                     fp.resize(config.key_len, 0);
                     write_txt("./sender_key.txt", fp);
@@ -254,7 +255,7 @@ fn try_pair(addr: &str, dev_name: &str, frames: usize, config: &Config)->(){
 
 
 }
-fn rec_pair(addr: &str, dev_name: &str, frames:usize, config: &Config)->(){
+fn rec_pair(addr: &str, dev_name: &str, config: &Config)->(){
     //todo!();
     let listener = TcpListener::bind(addr).expect("Failed to bind");
     for stream in listener.incoming() {
@@ -265,22 +266,16 @@ fn rec_pair(addr: &str, dev_name: &str, frames:usize, config: &Config)->(){
             Ok(_)=>{
                 let mut pair_data = rec::record(dev_name, config.rec_frames);
                 let fp_data = pair_data.split_off(config.pair_frames);
-                //pair_data=pair_data.iterator().map(|x| x.to_ne_bytes).flatten().collect();
-             
-                    //I think this lets me cast my original vec of i16s to u8s, but might be wrong
-                    //Definitely feels unidiomatic
-                    let to_send: Vec<u8> = to_u8(pair_data);//Vec::from_raw_parts(pair_data.as_mut_ptr() as *mut u8, pair_data.len()*2, pair_data.capacity()*2);
+                let to_send: Vec<u8> = to_u8(pair_data);//Vec::from_raw_parts(pair_data.as_mut_ptr() as *mut u8, pair_data.len()*2, pair_data.capacity()*2);
                     match stream.write(&to_send){
-                        Ok(t) => println!("Wrote data successfully"),
+                        Ok(t) => println!("sent {} bytes", t),
                         Err(e) => {println!("{:#?}", e);
-                        panic!("Unexpected error in try_pair");
+                        panic!("Unexpected error in rec_pair");
                         }
                     };
-                   // .expect("Error writing stream in unsafe part of try_pair");
-                
                 let mut res=fingerprint(fp_data, config);
+                println!("Fingerprint has len: {}", res.len());
                 res.resize(config.key_len, 0);
-                //println!("{:#?}", res);
                 write_txt("./receiver_key.txt", res)
                 return;
         

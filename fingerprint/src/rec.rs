@@ -23,9 +23,10 @@ fn main() {
 pub fn record(dev_name: &str, frames: usize)->Vec<i16>{
     let pcm = PCM::new(dev_name, Direction::Capture, false).unwrap();
    let hwp = HwParams::any(&pcm).unwrap();
-println!("Min channels: {}", hwp.get_channels_min().unwrap());
-println!("Max channels: {}", hwp.get_channels_max().unwrap());
-    hwp.set_channels(2).unwrap();
+   let min = hwp.get_channels_min().unwrap();
+/*println!("Min channels: {}", hwp.get_channels_min().unwrap());
+println!("Max channels: {}", hwp.get_channels_max().unwrap());*/
+    hwp.set_channels(min).unwrap();
     hwp.set_rate(44100, ValueOr::Nearest).unwrap();
     hwp.set_format(Format::s16()).unwrap();
     hwp.set_access(Access::RWInterleaved).unwrap();
@@ -33,12 +34,22 @@ println!("Max channels: {}", hwp.get_channels_max().unwrap());
     let io = pcm.io_i16().unwrap();
     //Should probably separate setting up all this from the actual record
 	//enough space for 6.5 seconds of recording at 44100Hz with 2 channels
-    let mut buf: Vec<i16> = Vec::with_capacity(frames);//[0i16; 573300];
-	buf.resize(frames, 0);
+    let mut buf: Vec<i16> = Vec::with_capacity(frames*min);//[0i16; 573300];
+	buf.resize(frames*min, 0);
 	let mut buf_s = buf.as_mut_slice();
     let reads=io.readi(&mut buf_s).unwrap();
     println!("Read {} frames", reads);
-	buf
+    let mut i = buf.len()-1;
+    let to_ret = Vec::with_capacity(frames);
+    //Filter down to one input channel
+    //Avoids redundancy and means we can still do key generation when min channels differs between devices
+    for i in 0..buf.len(){
+        if i % min == 0 {
+            to_ret.push(buf[i]);
+        }
+    } 
+    to_ret
+//	buf
 //    println!("Received following data: {:#?}", buf);
    // boxed::Box::new(buf).to_vec()
 }
@@ -56,7 +67,7 @@ pub fn playback(dev_name: &str, buf: &Vec<i16>)->(){
 }
 pub fn write_wav(filename: &str, buf: &Vec<i16>)->(){
     let specs = hound::WavSpec{
-        channels: 2,
+        channels: 1,
         sample_rate: 44100,
         bits_per_sample: 16,
         sample_format: hound::SampleFormat::Int
@@ -74,11 +85,11 @@ pub fn write_txt(filename: &str, buf: &Vec<i16>)->(){
    //let mut target = File::create(filename).unwrap();
    let mut target = OpenOptions::new().append(true).create(true).open(filename).unwrap();
     for i in 0..buf.len() {
-        if{i%2==0}{
+        
         target.write_all(buf[i].to_string().as_bytes());
         //Line breaks appear to be undesirable
         target.write_all("\n".as_bytes());
-        }
+        
     }
 }
 
