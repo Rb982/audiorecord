@@ -56,6 +56,9 @@ impl GaloisField{
             return Err("args out of bounds");
 
         }
+        if y == 0 {
+            return Err("Division by zero");
+        }
          Ok(self.gf_ilog[((self.gf_ilog.len()-1)+self.gf_log[x]-self.gf_log[y]) % (self.gf_ilog.len()-1)])
     }
     fn mult_inverse(&self, x:usize)->Option<usize>{
@@ -63,14 +66,15 @@ impl GaloisField{
             return None
         }
         for i in 1..self.gf_log.len(){
-            if self.mult(x, i)== Ok(1){
-                Some(i);
-            }
+            match self.mult(x, i) {
+                Ok(1)=>return Some(i),
+                _=>()
+            };
         }
         None
 
     }
-    fn eval_poly_at(&self, f:&Poly, x: usize)->Result<usize, &str>{
+    fn eval_poly_at(&self, f:&Poly, x: usize)->Result<usize, &'static str>{
         let mut to_ret = f.coeffs[0];
         let mut x_curr = x;
         for i in 1..f.coeffs.len(){
@@ -79,7 +83,7 @@ impl GaloisField{
         }
         Ok(to_ret)
     }
-    fn sum_poly(&self, first: &Poly, second: &Poly)->Result<Poly, &str>{
+    fn sum_poly(&self, first: &Poly, second: &Poly)->Result<Poly, &'static str>{
         let (min, max, longest)= if first.deg()>second.deg(){
             (second.deg()+1, first.deg()+1, first)
         }else{
@@ -95,25 +99,34 @@ impl GaloisField{
         Ok(Poly{coeffs: new_coeffs})
         //todo!();
     }
-    fn mult_poly(&self, first: &Poly, second: &Poly)->Result<Poly, &str>{
-        let f_deg = first.deg();
-        let s_deg = second.deg();
+    fn mult_poly(&self, first: &Poly, second: &Poly)->Result<Poly, &'static str>{
+        let f_deg = first.deg(); 
+        let s_deg = second.deg(); 
         let mut new_coeffs=Vec::with_capacity(f_deg+s_deg+1);
         for i in 0..f_deg+1{
             for j in 0..s_deg+1{
                 if new_coeffs.len()<=i+j {
-                    new_coeffs.push(self.sum(first.coeffs[i], second.coeffs[j])?);
+                    new_coeffs.push(self.mult(first.coeffs[i], second.coeffs[j])?);
                 }else{
-                    new_coeffs[i+j]=self.sum(new_coeffs[i+j], self.sum(first.coeffs[i], second.coeffs[j])?)?;
+                    new_coeffs[i+j]=self.sum(new_coeffs[i+j], self.mult(first.coeffs[i], second.coeffs[j])?)?;
                 }
             }
         }
         Ok(Poly{coeffs: new_coeffs})
     }
-    fn div_poly(&self, dividend: &Poly, divisor: &Poly)->Result<(Poly, Poly), &str>{
+    fn div_poly(&self, dividend: &Poly, divisor: &Poly)->Result<(Poly, Poly), &'static str>{
         //todo!();
-        let mut result  = vec![0; divisor.deg()];
+        
+        let mut result  = vec![0; dividend.deg() - divisor.deg()+1];
+        if divisor.deg()==0 {
+           for i in 0..result.len(){
+            result[i]=self.div(dividend.coeffs[i], divisor.coeffs[0])?;
+           }
+           return Ok((Poly{coeffs:result}, Poly::mononomial(0,0)));
+        }
         let mut remainder = Poly{coeffs: dividend.coeffs.clone()};
+        //Think this while condition is wrong; notably, if divisor is of degree zero, it's an infinite loop
+        //Not sure if that has to be special-cased or if it's a sign my logic is wrong
         while remainder.deg() >= divisor.deg() {
             let (coeff, deg) = (self.div(remainder.coeffs[remainder.deg()], divisor.coeffs[divisor.deg()])?, remainder.deg()-divisor.deg());
             remainder = self.sum_poly(
@@ -182,7 +195,7 @@ impl ReedSolomon{
         }
         result
     }
-    fn encode(&self, mut message: Poly)->Result<Poly, &str>{
+    fn encode(&self, mut message: Poly)->Result<Poly, &'static str>{
         message = message.shift(self.n-self.k);
         let (_, ck) = self.field.div_poly(&message, &self.generator_poly())?;
         self.field.sum_poly(&message, &ck)
@@ -242,11 +255,12 @@ mod tests{
                 let should_be_i = field.sum(sum, j)?;
                 assert!(i==should_be_i, "Addition is own inverse");
                 assert!(sum<256, "Field is closed under addition");
-                if(j==0){
+                if j==0 {
                     assert!(sum==i, "Additive identity is an identity");
                 }
                 assert!(sum==i^j, "Addition is xor");
             }
+            
         }
         Ok(())
     }
@@ -264,10 +278,13 @@ mod tests{
             for j in 0..255{
                 let i_j = field.mult(i, j)?;
                 let j_i = field.mult(j, i)?;
-                if(i!=0&&j!=0){
-                let should_be_i = field.div(i_j, j)?;
-                assert!(should_be_i==i, "Division is inverse multiplication");
+               
+                match field.div(i_j, j){
+                    Ok(t) => assert!(t==i && j != 0, "Division is inverse multiplication"),
+                    Err(_) =>assert!(j==0, "Division fails only for division by zero or non-field elements")
                 }
+               // assert!(should_be_i==i, "Division is inverse multiplication");
+               
                 assert!(i_j == j_i, "Multiplication commutes");
                 assert!(i_j<256, "Field is closed under multiplication");
                 for k in 0..255{
@@ -276,11 +293,75 @@ mod tests{
                     assert!(i_jk == ij_ik, "Multiplication distributes over addition");
                 }
             }
+            if let Some(t) = field.mult_inverse(i){
+                assert!(field.mult(i, t)?==1);
+            }else{
+                assert!(i==0);
+            }
         }
         match field.mult(1000, 2){
             Ok(_)=>panic!("Invalid multiplications should fail"),
             Err(_)=>()
         };
         Ok(())
+    }
+    #[test]
+    fn test_polynomial()->Result<(), &'static str>{
+        let prim_poly: usize = 0b100011101;
+        let pow = 8;
+        let generator = 0b10000011;
+        let field = GaloisField::new(pow, prim_poly, generator);
+        let zero_p=Poly::mononomial(0,0);
+        let one_p=Poly::mononomial(1,0);
+        //Ideally, p_one, p_two, and p_three should probably be randomly generated
+        let p_one = Poly{
+            coeffs: vec![239,228,65,146]
+        };
+        let p_two = Poly{
+            coeffs: vec![167,54, 253, 181, 41]
+        };
+        let p_three=Poly{
+            coeffs:vec![145,183]
+        };
+        let mult_by_zero = field.mult_poly(&p_one, &zero_p)?;
+        let mult_by_one = field.mult_poly(&p_one, &one_p)?;
+        let add_zero = field.sum_poly(&p_one, &zero_p)?;
+       
+        let prod_of_poly = field.mult_poly(&p_one, &p_two)?;
+        let sum_of_poly = field.sum_poly(&p_one, &p_two)?;
+       
+        let (should_be_p_one, should_be_zero) = field.div_poly(&prod_of_poly, &p_two)?;
+        
+        let should_be_p_two = field.sum_poly(&sum_of_poly, &p_one)?;
+        let one_twothree = field.mult_poly(&p_one, &field.sum_poly(&p_two, &p_three)?)?;
+        let onetwo_onethree = field.sum_poly(&field.mult_poly(&p_one, &p_two)?, &field.mult_poly(&p_one, &p_three)?)?;
+        
+        let (div_res, div_rem) = field.div_poly(&p_two, &p_three)?;
+       
+        let should_also_be_p_two = field.sum_poly(&field.mult_poly(&div_res, &p_three)?, &div_rem)?;
+        let should_be_err = field.div_poly(&p_two, &zero_p);
+        match should_be_err{
+            Ok(_)=>panic!("Div by zero should yield an error"),
+            Err(_)=>()
+        };
+        let (should_be_p_three, _) = field.div_poly(&p_three, &one_p)?;
+        for i in 0..255{
+            let p_one_val = field.eval_poly_at(&p_one, i)?;
+            let p_two_val = field.eval_poly_at(&p_two, i)?;
+            let zero_res = field.eval_poly_at(&mult_by_zero, i)?;
+            assert!(zero_res==0, "Multiplication by zero yields zero, {}, {}", zero_res, i);
+            assert!(field.eval_poly_at(&mult_by_one, i)?==p_one_val, "Multiplicative id is one");
+            assert!(field.eval_poly_at(&add_zero, i)?==p_one_val, "0 is additive id");
+            assert!(field.eval_poly_at(&prod_of_poly, i)? == field.mult(p_one_val, p_two_val)?, "eval of mult of poly is mult of eval of poly");
+            assert!(field.eval_poly_at(&sum_of_poly, i)? == field.sum(p_one_val, p_two_val)?, "eval of sum of poly is sum of eval of poly");
+            assert!(field.eval_poly_at(&should_be_p_one, i)? == p_one_val, "division is inverse mult");
+            assert!(field.eval_poly_at(&should_be_zero, i)? == 0, "Remainder of even division is zero poly");
+            assert!(field.eval_poly_at(&should_be_p_two, i)? == p_two_val, "Addition is own inverse");
+            assert!(field.eval_poly_at(&one_twothree, i)? == field.eval_poly_at(&onetwo_onethree, i)?, "Multiplication distributes");
+            assert!(field.eval_poly_at(&should_also_be_p_two, i)?==p_two_val, "result*divisor+remainder = original value");
+            assert!(field.eval_poly_at(&should_be_p_three, i)?==field.eval_poly_at(&p_three, i)?, "Div by one yields original value");
+        } 
+
+       Ok(())
     }
 }
