@@ -8,10 +8,11 @@
 fn main(){}
 struct GaloisField{
     gf_log: Vec<usize>,
-    gf_ilog: Vec<usize> 
+    gf_ilog: Vec<usize>,
+    generator: usize
 }
 impl GaloisField{
-    fn new(pow: usize, prim_poly: usize)->Self{
+    fn new(pow: usize, prim_poly: usize, generator: usize)->Self{
        
         let max: usize = 1<<pow;
         let mut gf_log = vec![0usize; max];
@@ -24,34 +25,40 @@ impl GaloisField{
             if b&max!=0{
                 b = b^prim_poly;
             }
+            
         }
+       //gf_ilog.truncate(gf_ilog.len()-1);
         GaloisField{
             gf_log: gf_log,
-            gf_ilog: gf_ilog
+            gf_ilog: gf_ilog,
+            generator: generator
         }
     }
-    fn sum(&self, x: usize, y: usize)->Result<usize, &str>{
+    fn sum(&self, x: usize, y: usize)->Result<usize, &'static str>{
         if x>self.gf_log.len() || y>self.gf_log.len(){
             return Err("args out of bounds");
 
         }
          Ok(x^y)
     }
-    fn mult(&self, x: usize, y: usize)->Result<usize, &str>{
+    fn mult(&self, x: usize, y: usize)->Result<usize, &'static str>{
         if x>self.gf_log.len() || y>self.gf_log.len(){
             return Err("args out of bounds");
 
         }
-         Ok(self.gf_ilog[(self.gf_log[x]+self.gf_log[y]) % self.gf_ilog.len()])
+        if x == 0 || y == 0 {
+            return Ok(0);
+        }
+         Ok(self.gf_ilog[(self.gf_log[x]+self.gf_log[y]) % (self.gf_ilog.len()-1)])
     }
-    fn div(&self, x: usize, y: usize)->Result<usize, &str>{
+    fn div(&self, x: usize, y: usize)->Result<usize, &'static str>{
         if x>self.gf_log.len() || y>self.gf_log.len(){
             return Err("args out of bounds");
 
         }
-         Ok(self.gf_ilog[(self.gf_log[x]-self.gf_log[y]+self.gf_ilog.len()) % self.gf_ilog.len()])
+         Ok(self.gf_ilog[((self.gf_ilog.len()-1)+self.gf_log[x]-self.gf_log[y]) % (self.gf_ilog.len()-1)])
     }
-    fn inverse(&self, x:usize)->Option<usize>{
+    fn mult_inverse(&self, x:usize)->Option<usize>{
         if x==0{
             return None
         }
@@ -154,14 +161,126 @@ impl Poly{
 struct ReedSolomon{
     n: usize,
     k: usize,
-    generator: Poly,
     field: GaloisField
 }
 
 impl ReedSolomon{
+    //Only way this can fail is if the original field had an invalid generator polynomial
+    //Since in such a case everything we do is nonsense, we can assume that doesn't happen
+    //Consequently, we can return a poly instead of a Result<Poly>
+    fn generator_poly(&self)->Poly{
+      
+        let mut result = Poly::mononomial(1, 0);
+        let mut temp=Poly{coeffs: vec![self.field.generator, 1]};
+        for _i in 0..(self.n-self.k){
+            if let Ok(t)=self.field.mult_poly(&result, &temp){
+                result = t;
+            }
+            if let Ok(t) = self.field.mult(self.field.generator, temp.coeffs[0]){
+                temp.coeffs[0]=t;
+            }
+        }
+        result
+    }
     fn encode(&self, mut message: Poly)->Result<Poly, &str>{
         message = message.shift(self.n-self.k);
-        let (_, ck) = self.field.div_poly(&message, &self.generator)?;
+        let (_, ck) = self.field.div_poly(&message, &self.generator_poly())?;
         self.field.sum_poly(&message, &ck)
+    }
+    //As in generator_poly, no need to return a result because there's no way to get an error with a correctly built GF
+    fn syndrome_components(&self, received: &Poly)->Vec<usize>{
+        let mut to_ret = Vec::with_capacity(self.n-self.k);
+        let mut curr = self.field.generator;
+        for _i in 0..(self.n-self.k){
+            if let Ok(t)=self.field.eval_poly_at(received, curr){
+                to_ret.push(t);
+            }
+            if let Ok(t)=self.field.mult(curr, self.field.generator){
+                curr=t;
+            }
+        }
+        to_ret
+    }
+
+}
+
+
+
+
+
+
+#[cfg(test)]
+mod tests{
+    use super::*;
+    #[test]
+    fn test_setup(){
+        let prim_poly: usize = 0b100011101;
+        let pow = 8;
+        let generator = 0b10000011;
+        let field = GaloisField::new(pow, prim_poly, generator);
+        assert!(field.gf_log.len()==256);
+        assert!(field.gf_ilog.len()==field.gf_log.len());
+        for i in 0..field.gf_log.len(){
+            for j in 0..field.gf_log.len(){
+                if i!=j{
+                    assert!(field.gf_log[i]!=field.gf_log[j], "Failure at {}, {}.  gf_log: {:#?}", i, j, field.gf_log);
+                    assert!(field.gf_ilog[i]!=field.gf_ilog[j]||field.gf_ilog[i]==1);
+                }
+            }
+        }
+
+    }
+    #[test]
+    fn test_addition()->Result<(), &'static str>{
+        let prim_poly: usize = 0b100011101;
+        let pow = 8;
+        let generator = 0b10000011;
+        let field = GaloisField::new(pow, prim_poly, generator);
+        for i in 0..255{
+            for j in 0..255{
+                let sum = field.sum(i, j)?;
+                let should_be_i = field.sum(sum, j)?;
+                assert!(i==should_be_i, "Addition is own inverse");
+                assert!(sum<256, "Field is closed under addition");
+                if(j==0){
+                    assert!(sum==i, "Additive identity is an identity");
+                }
+                assert!(sum==i^j, "Addition is xor");
+            }
+        }
+        Ok(())
+    }
+    #[test]
+    fn test_multiplication()->Result<(), &'static str>{
+        let prim_poly: usize = 0b100011101;
+        let pow = 8;
+        let generator = 0b10000011;
+        let field = GaloisField::new(pow, prim_poly, generator);
+        for i in 0..255{
+            let by_zero = field.mult(i, 0)?;
+            let by_id= field.mult(i, 1)?;
+            assert!(by_id == i, "Multiplying by 1 yields original value: (i, by_id)= {},{}", i, by_id);
+            assert!(by_zero == 0, "Multiplying by zero yields zero");
+            for j in 0..255{
+                let i_j = field.mult(i, j)?;
+                let j_i = field.mult(j, i)?;
+                if(i!=0&&j!=0){
+                let should_be_i = field.div(i_j, j)?;
+                assert!(should_be_i==i, "Division is inverse multiplication");
+                }
+                assert!(i_j == j_i, "Multiplication commutes");
+                assert!(i_j<256, "Field is closed under multiplication");
+                for k in 0..255{
+                    let i_jk = field.mult(i, field.sum(j, k)?)?;
+                    let ij_ik=field.sum(field.mult(i, j)?, field.mult(i, k)?)?;
+                    assert!(i_jk == ij_ik, "Multiplication distributes over addition");
+                }
+            }
+        }
+        match field.mult(1000, 2){
+            Ok(_)=>panic!("Invalid multiplications should fail"),
+            Err(_)=>()
+        };
+        Ok(())
     }
 }
