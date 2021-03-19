@@ -1,11 +1,13 @@
 use std::{env, thread, time, mem, boxed};
+#[cfg(target_os="linux")]
 use alsa::{Direction, ValueOr};
+#[cfg(target_os="linux")]
 use alsa::pcm::{PCM, HwParams, Format, Access, State};
 use hound;
 use std::fs::File;
-use std::io::Write;
+use std::io::{Write, Result};
 use std::fs::OpenOptions;
-fn main() {
+fn main() {/*
     let mut args = env::args();
     let _ = args.next(); //Throw away the filename
     let dev_name=args.next().expect("Insufficient arguments.  Must provide device name.");
@@ -17,9 +19,9 @@ fn main() {
     //write_wav(&wav_name, &buf);
     write_txt(&text_name, &buf);
     }
-  // playback(&out_dev_name, buf);
+  // playback(&out_dev_name, buf);*/
 }
-
+#[cfg(target_os="linux")]
 pub fn record(dev_name: &str, frames: usize)->Vec<i16>{
     let pcm = PCM::new(dev_name, Direction::Capture, false).unwrap();
    let hwp = HwParams::any(&pcm).unwrap();
@@ -54,6 +56,7 @@ let min =min as usize;
 //    println!("Received following data: {:#?}", buf);
    // boxed::Box::new(buf).to_vec()
 }
+#[cfg(target_os="linux")]
 pub fn playback(dev_name: &str, buf: &Vec<i16>)->(){
     let writePCM=PCM::new(dev_name, Direction::Playback, false).unwrap();
 
@@ -82,15 +85,16 @@ pub fn write_wav(filename: &str, buf: &Vec<i16>)->(){
     iwriter.flush().unwrap();
 
 }
-pub fn write_txt(filename: &str, buf: &Vec<i16>)->(){
+pub fn write_txt(filename: &str, buf: &Vec<i16>)->Result<()>{
    //let mut target = File::create(filename).unwrap();
-   let mut target = OpenOptions::new().append(true).create(true).open(filename).unwrap();
+   let mut target = OpenOptions::new().append(true).create(true).open(filename)?;
     for i in 0..buf.len() {
         
-        target.write_all(buf[i].to_string().as_bytes());
+        target.write_all(buf[i].to_string().as_bytes())?;
         //Line breaks appear to be undesirable
-        target.write_all("\n".as_bytes());
+        target.write_all("\n".as_bytes())?;
         
     }
+    Ok(())
 }
 

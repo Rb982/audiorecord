@@ -1,4 +1,4 @@
-
+#![allow(dead_code)]
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::io::{BufReader, BufRead};
@@ -21,7 +21,8 @@ struct Config {
 }
 
 fn main() {
-    let config = Config{
+    todo!();
+    /*let config = Config{
         slice_size: 16537,
         num_bands: 33,
         rec_frames: 441000,
@@ -32,63 +33,16 @@ fn main() {
     
     let mut args = env::args();
     let _ = args.next();
+    let mode = args.next();
     let addr =args.next().expect("arg missing");
     let dev_name = args.next().expect("arg missing");
     for i in 1..10{
-    rec_pair(&addr, &dev_name, &config);
-  }/*
-    let first_file = args.next().expect("Argument missing; must provide first input file");
-    //let second_file= args.next().expect("Argument missing; must provide second input");
-    let first_out = args.next().expect("Argument missing; must provide first output");
-    //let second_out = args.next().expect("Argument missing; must provide second output");
-    let f = File::open(&first_file).expect("Failed to open file.");
-    let mut lines = BufReader::new(f).lines();
-    'outer: loop{
-    let mut data=Vec::with_capacity(config.slice_size*60);
-   
-    for i in 0..config.slice_size*60 {
-        //to_ret.push(i16::from_str_radix(&line.unwrap(), 10).unwrap());
-        match lines.next(){
-            Some(val)=> match i16::from_str_radix(&val.unwrap(), 10){
-                Ok(t) => data.push(t),
-                Err(e) =>println!("In read file {}", e)
-            },
-            //Right now, tossing away up to 22 seconds of data; not long-term good but fine for now
-            None=>break 'outer
-        };
-    }; 
-   //let mut first_data = read_file(&first_file);
-   let first_bits = fingerprint(data, &config);
-   write_txt(&first_out, first_bits);
-    }
-  /* println!("First read completed");
-   let mut second_data = read_file(&second_file);
-  // println!("Files read");
-   let offset = align(&first_data, &second_data);
-   println!("Inputs aligned");
-   second_data.drain(0..offset);
-   first_data.truncate(first_data.len()-offset);
-   println!("Vec lengths are {} {}", first_data.len(), second_data.len());
-   for i in 1..1000 {
-       println!("{} {}", first_data[i], second_data[i])
-   }
-   let first_bits = fingerprint(first_data, &config);
-   println!("First fingerprint completed");
-   let second_bits=fingerprint(second_data, &config);
-   println!("Second fingerprint completed");
-  // write_txt(&first_out, &first_bits);
-   println!("First write completed");
-   //write_txt(&second_out, &second_bits);
-   println!("Second write completed");
-   println!("Vecs have truncated length {} and are different in {} locations", first_bits.len(), distance(&first_bits, &second_bits));
-   /*for bit in &bits {
-      print!("{}", bit);
-   } */
-   io::stdout().flush().unwrap()
-   //println!("{:#?}", hanning_window(&test, test.len()));
-  // println!("{:#?}", fourier(hanning_window(&test, test.len()), test.len()));
-*/*/
-
+        match mode{
+            "r" => rec_pair(&addr, &dev_name, &config),
+            "s" => try_pair(&addr, &dev_name, &config),
+            _ => panic!("first argument must either be r or s")
+        }
+    }*/
 }
 fn distance(first: &Vec<u8>, second: &Vec<u8>)->usize{
     let mut sum =0;
@@ -97,15 +51,15 @@ fn distance(first: &Vec<u8>, second: &Vec<u8>)->usize{
     }
     sum
 }
-fn align(first: &Vec<i16>, second: &Vec<i16>)->usize {
+fn align(first: &Vec<u8>, second: &Vec<u8>)->usize {
     let mut offset = (0, 0isize);
     let max_len = if first.len() < second.len() { first.len() } else {second.len()};
-    let max_offset = if max_len < 441000 { max_len } else {441000};
-    for i in 0..max_offset{
+    for i in 0..max_len{
         let mut cross_corr = 0isize;
-        for j in 0..(max_offset){
+        for j in 0..(max_len-i){
             cross_corr=cross_corr+(first[j] as isize*second[i+j] as isize);
         }
+        cross_corr=cross_corr/(max_len-i) as isize;
         if cross_corr> offset.1 {
             offset = (i,cross_corr)
         }
@@ -219,76 +173,56 @@ fn write_txt(filename: &str, buf: Vec<u8>)->(){
 
  //Network logic starts here
 
-fn try_pair(addr: &str, dev_name: &str,config: &Config)->(){
-    if let Ok(mut stream) = TcpStream::connect(addr) {
-	stream.set_nonblocking(false).expect("Could not set to block");
-        println!("Connected");
-        let buf=[0; 1];
-        stream.write(&buf).expect("Error writing stream initial in try_pair");    
-        let mut data = rec::record(dev_name, config.rec_frames);
-        let mut buffer = Vec::with_capacity(config.pair_frames*2);
-	buffer.resize(config.pair_frames*2, 0);
+fn try_pair<F,G>(addr: &str, dev_name: &str,config: &Config, rec_func:F, fingerprint_func:G)->Result<Vec<u8>>
+where F: Fn(&str, usize)->Vec<u8>, G: Fn(Vec<u8>)->Vec<u8>{
+    let mut stream= TcpStream::connect(addr)?;
+	stream.set_nonblocking(false)?;
+    println!("Connected");
+    let buf=[0; 1];
+    stream.write(&buf)?;    
+    let mut data = rec_func(dev_name, config.rec_frames);
+    let mut buffer = Vec::with_capacity(config.pair_frames);
+	buffer.resize(config.pair_frames, 0);
 	let mut filled = 0;
-        let mut buffer = buffer.as_mut_slice();
-		while filled < config.pair_frames*2 {
-          		match stream.read(&mut buffer[filled..config.pair_frames*2]){
-          		      Ok(t)=>{
-               			     println!("Received {} bytes", t);
-					filled = filled +t;
-				}, 
-				Err(e)=>{
-					println!("{:#?}", e);
-					panic!("Error in receiving pair data try_pair");
-				}
-			}
-		}
-                let received_data: Vec<i16> = to_i16(buffer);//Vec::from_raw_parts(buffer.as_mut_ptr() as *mut i16, buffer.len()/2, buffer.len()/2);
-                let offset=align(&received_data, &data);
-                println!("Offset: {}", offset);
-                data.drain(0..(offset+received_data.len()));
-                let mut fp = fingerprint(data, config);
-                fp.resize(config.key_len, 0);
-                write_txt("./sender_key.txt", fp);
-                    //println!("{:#?}", fp);
-                return;
-          
-        
-
-    }else{
-        panic!("No connection");
-    }
+    let buf = buffer.as_mut_slice();
+	while filled < config.pair_frames*2 {
+        let t =  stream.read(&mut buf[filled..config.pair_frames*2])?;
+        filled = filled+t;
+	}
+    //let received_data: Vec<u8> = to_i16(buffer);//Vec::from_raw_parts(buffer.as_mut_ptr() as *mut i16, buffer.len()/2, buffer.len()/2);
+    let offset=align(&buffer, &data);
+    println!("Offset: {}", offset);
+    {data.drain(0..(offset+buffer.len()));}
+    let mut fp = fingerprint_func(data);
+    fp.resize(config.key_len, 0);   
+    return Ok(fp);    
 }
-fn rec_pair(addr: &str, dev_name: &str, config: &Config)->(){
-    //todo!();
-    let listener = TcpListener::bind(addr).expect("Failed to bind");
+#[allow(unreachable_code)]
+fn rec_pair<F,G>(addr: &str, dev_name: &str,config: &Config, rec_func:F, fingerprint_func:G)->Result<Vec<u8>>
+where F: Fn(&str, usize)->Vec<u8>,
+    G: Fn(Vec<u8>)->Vec<u8>{
+    let listener = TcpListener::bind(addr)?;
     for stream in listener.incoming() {
-        let mut stream = stream.unwrap();//.expect("Failed to unwrap stream in rec_pair");
+        let mut stream = stream?;//.expect("Failed to unwrap stream in rec_pair");
         let mut buf= Vec::with_capacity(1);
         let mut buf = buf.as_mut_slice();
-        match stream.read(&mut buf){
-            Ok(_)=>{
-                let mut pair_data = rec::record(dev_name, config.rec_frames);
+        loop{
+            let t = stream.read(&mut buf)?;
+            if t != 0{
+                let mut pair_data = rec_func(dev_name, config.rec_frames);
                 let fp_data = pair_data.split_off(config.pair_frames);
-                let to_send: Vec<u8> = to_u8(pair_data);//Vec::from_raw_parts(pair_data.as_mut_ptr() as *mut u8, pair_data.len()*2, pair_data.capacity()*2);
-                    match stream.write(&to_send){
-                        Ok(t) => println!("sent {} bytes", t),
-                        Err(e) => {println!("{:#?}", e);
-                        panic!("Unexpected error in rec_pair");
-                        }
-                    };
-                let mut res=fingerprint(fp_data, config);
+                //let to_send: Vec<u8> = to_u8(pair_data);//Vec::from_raw_parts(pair_data.as_mut_ptr() as *mut u8, pair_data.len()*2, pair_data.capacity()*2);
+                stream.write(&pair_data)?;
+                let mut res=fingerprint_func(fp_data);
                 println!("Fingerprint has len: {}", res.len());
                 res.resize(config.key_len, 0);
-                write_txt("./receiver_key.txt", res);
-                return;
-        
+                //write_txt("./receiver_key.txt", res);
+                return Ok(res);
             }
-            
-        
-            Err(_)=>continue,
-        };
+        }
+        unreachable!();
     }
-   
+    unreachable!();
 }
 fn to_u8(input: Vec<i16>)->Vec<u8>{
 	let mut to_ret:Vec<u8> = Vec::with_capacity(input.len()*2);
