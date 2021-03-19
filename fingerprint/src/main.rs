@@ -34,10 +34,10 @@ fn main() {
     let _ = args.next();
     let addr =args.next().expect("arg missing");
     let dev_name = args.next().expect("arg missing");
-    let mut i = 0;
-    loop{
+//    let mut i = 0;
+    for i in 1..10{
     rec_pair(&addr, &dev_name, &config);
-    i=i+1;
+  //  i=i+1;
     println!{"{}", i};
     }/*
     let first_file = args.next().expect("Argument missing; must provide first input file");
@@ -276,7 +276,7 @@ fn rec_pair(addr: &str, dev_name: &str, config: &Config)->(){
                 let mut res=fingerprint(fp_data, config);
                 println!("Fingerprint has len: {}", res.len());
                 res.resize(config.key_len, 0);
-                write_txt("./receiver_key.txt", res)
+                write_txt("./receiver_key.txt", res);
                 return;
         
             }
