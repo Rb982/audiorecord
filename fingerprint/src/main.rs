@@ -34,12 +34,9 @@ fn main() {
     let _ = args.next();
     let addr =args.next().expect("arg missing");
     let dev_name = args.next().expect("arg missing");
-//    let mut i = 0;
     for i in 1..10{
     rec_pair(&addr, &dev_name, &config);
-  //  i=i+1;
-    println!{"{}", i};
-    }/*
+  }/*
     let first_file = args.next().expect("Argument missing; must provide first input file");
     //let second_file= args.next().expect("Argument missing; must provide second input");
     let first_out = args.next().expect("Argument missing; must provide first output");
@@ -224,36 +221,42 @@ fn write_txt(filename: &str, buf: Vec<u8>)->(){
 
 fn try_pair(addr: &str, dev_name: &str,config: &Config)->(){
     if let Ok(mut stream) = TcpStream::connect(addr) {
+	stream.set_nonblocking(false).expect("Could not set to block");
         println!("Connected");
         let buf=[0; 1];
-        stream.write(&buf).expect("Error writing stream initial in try_pair");
-        
+        stream.write(&buf).expect("Error writing stream initial in try_pair");    
         let mut data = rec::record(dev_name, config.rec_frames);
         let mut buffer = Vec::with_capacity(config.pair_frames*2);
+	buffer.resize(config.pair_frames*2, 0);
+	let mut filled = 0;
         let mut buffer = buffer.as_mut_slice();
-        'outer: loop{
-            match stream.read(&mut buffer){
-                Ok(t)=>{
-                    println!("Received {} bytes", t);
-                    let received_data: Vec<i16> = to_i16(buffer);//Vec::from_raw_parts(buffer.as_mut_ptr() as *mut i16, buffer.len()/2, buffer.len()/2);
-                    let offset=align(&received_data, &data);
-                    println!("Offset: {}", offset);
-                    data.drain(0..(offset+received_data.len()));
-                    let mut fp = fingerprint(data, config);
-                    fp.resize(config.key_len, 0);
-                    write_txt("./sender_key.txt", fp);
+		while filled < config.pair_frames*2 {
+          		match stream.read(&mut buffer[filled..config.pair_frames*2]){
+          		      Ok(t)=>{
+               			     println!("Received {} bytes", t);
+					filled = filled +t;
+				}, 
+				Err(e)=>{
+					println!("{:#?}", e);
+					panic!("Error in receiving pair data try_pair");
+				}
+			}
+		}
+                let received_data: Vec<i16> = to_i16(buffer);//Vec::from_raw_parts(buffer.as_mut_ptr() as *mut i16, buffer.len()/2, buffer.len()/2);
+                let offset=align(&received_data, &data);
+                println!("Offset: {}", offset);
+                data.drain(0..(offset+received_data.len()));
+                let mut fp = fingerprint(data, config);
+                fp.resize(config.key_len, 0);
+                write_txt("./sender_key.txt", fp);
                     //println!("{:#?}", fp);
-                    break 'outer;
-                },
-                Err(_)=>continue
-            };
-        }
+                return;
+          
+        
 
     }else{
         panic!("No connection");
     }
-
-
 }
 fn rec_pair(addr: &str, dev_name: &str, config: &Config)->(){
     //todo!();
