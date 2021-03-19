@@ -31,6 +31,7 @@ println!("Max channels: {}", hwp.get_channels_max().unwrap());*/
     hwp.set_format(Format::s16()).unwrap();
     hwp.set_access(Access::RWInterleaved).unwrap();
     pcm.hw_params(&hwp).unwrap();
+let min =min as usize;
     let io = pcm.io_i16().unwrap();
     //Should probably separate setting up all this from the actual record
 	//enough space for 6.5 seconds of recording at 44100Hz with 2 channels
@@ -40,7 +41,7 @@ println!("Max channels: {}", hwp.get_channels_max().unwrap());*/
     let reads=io.readi(&mut buf_s).unwrap();
     println!("Read {} frames", reads);
     let mut i = buf.len()-1;
-    let to_ret = Vec::with_capacity(frames);
+    let mut to_ret = Vec::with_capacity(frames);
     //Filter down to one input channel
     //Avoids redundancy and means we can still do key generation when min channels differs between devices
     for i in 0..buf.len(){
