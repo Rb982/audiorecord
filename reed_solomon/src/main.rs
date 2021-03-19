@@ -154,7 +154,7 @@ impl GaloisField{
         }
         Ok((Poly{coeffs: result}, remainder))
     }
-    fn row_echelon_form(&self, mut mat: Vec<Vec<usize>>)->Result<Vec<Vec<usize>>, &'static str>{
+    fn rref(&self, mut mat: Vec<Vec<usize>>)->Result<Vec<Vec<usize>>, &'static str>{
         let mut leading_coeff=0;
         for i in 0..mat.len(){
             while mat[i][leading_coeff]==0 {
@@ -169,46 +169,20 @@ impl GaloisField{
                     if leading_coeff==mat.len() {return Ok(mat);}
                 }
             }
-            for j in i+1..mat.len(){
-                let mult_factor = self.div(mat[j][leading_coeff], mat[i][leading_coeff])?;
+            let temp = mat[i][leading_coeff];
+            for j in leading_coeff..mat[i].len(){
+                mat[i][j] = self.div(mat[i][j], temp)?;
+            }
+            for j in 0..mat.len(){
+                if j !=i{
+                let mult_factor = mat[j][leading_coeff];
                 for k in leading_coeff..mat[j].len(){
                     mat[j][k]=self.sum(mat[j][k], self.mult(mult_factor, mat[i][k])?)?;
                 }
             }
+            }
             leading_coeff+=1;
             if leading_coeff==mat.len() {return Ok(mat);}
-        }
-        Ok(mat)
-    }
-      
-    
-    fn rref(&self, mat: Vec<Vec<usize>>)->Result<Vec<Vec<usize>>, &'static str>{
-        let mut mat = self.row_echelon_form(mat)?;
-        let mut leading_coeff = 0;
-        'outer: for i in 0..mat.len(){
-            while mat[i][leading_coeff]==0{
-                leading_coeff+=1;
-                if leading_coeff==mat[i].len() {break 'outer;}
-            }
-            let mult_inv = self.mult_inverse(mat[i][leading_coeff]).unwrap();
-            for j in leading_coeff..mat[i].len(){
-                mat[i][j]=self.mult(mat[i][j], mult_inv)?;
-            }
-        }
-        leading_coeff=0;
-        'out: for i in 0..mat.len(){
-            while mat[i][leading_coeff]==0{
-                leading_coeff+=1;
-                if leading_coeff==mat[i].len() {break 'out;}
-            }
-            for j in 0..i{
-                if mat[j][leading_coeff]!=0 {
-                    let temp = mat[j][leading_coeff];
-                    for k in leading_coeff..mat[j].len(){
-                        mat[j][k]=self.sum(mat[j][k], self.mult(temp, mat[i][k])?)?;
-                    }
-                }
-            }
         }
         Ok(mat)
     }
