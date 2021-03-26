@@ -1,15 +1,18 @@
 #![allow(dead_code)]
-use std::fs::File;
-use std::fs::OpenOptions;
-use std::io::{BufReader, BufRead};
+#![allow(unused_imports)]
+use std::fs::{File, OpenOptions};
+use std::io::{BufReader, BufRead, Read, Write, Result};
 use std::io;
-use std::io::{Read, Write, Result};
 use std::env;
 use rustfft;
 use rustfft::num_complex::Complex32;
 use std::net::{TcpStream, TcpListener};
 mod rec;
+mod reed_solomon;
 use std::convert::TryInto;
+use sha2;
+use sha2::digest::Digest;
+use std::mem::size_of;
 //use bitvec::vec::BitVec;
 
 struct Config {
@@ -17,7 +20,8 @@ struct Config {
     num_bands: usize,
     rec_frames: usize,
     pair_frames: usize,
-    key_len: usize
+    key_len: usize,
+    key_frames: usize
 }
 
 fn main() {
@@ -38,7 +42,7 @@ fn main() {
     let dev_name = args.next().expect("arg missing");
     for i in 1..10{
         match mode{
-            "r" => rec_pair(&addr, &dev_name, &config),
+            "r" => rec_pair(&addr, &dev_name, &config, |x, y| rec::record(x,y), ),
             "s" => try_pair(&addr, &dev_name, &config),
             _ => panic!("first argument must either be r or s")
         }
@@ -67,7 +71,7 @@ fn align(first: &Vec<u8>, second: &Vec<u8>)->usize {
     }
     offset.0
 }
-fn hanning_window(input: &Vec<i16>, window_len: usize)->Vec<f32>{
+fn hanning_window(input: &[i16], window_len: usize)->Vec<f32>{
     let mut i = 0;
     let mut to_ret = Vec::with_capacity(input.len());
     while i<input.len() {
@@ -111,10 +115,12 @@ fn fourier(data:Vec<f32>, slice_size: usize)->Vec<Complex32>{
     buffer.to_vec()
 }
 
-fn fingerprint(mut data: Vec<i16>, config: &Config)->Vec<u8>{
+fn fingerprint(data: &[i16], config: &Config)->Vec<bool>{
     //Probably should end up with this back inside the call to fourier, and just replace calls to data.len() with transformed.len()
     if {data.len()%config.slice_size !=0} {
-        data.truncate(data.len()-data.len()%config.slice_size);
+        /*Possibly return an error instead of truncating for immutable borrow*/
+        //data.truncate(data.len()-data.len()%config.slice_size);
+        panic!("Dimension error");
     }
     let frames = data.len()/config.slice_size;
    // println!("Frames: {}", frames);
@@ -146,9 +152,9 @@ fn fingerprint(mut data: Vec<i16>, config: &Config)->Vec<u8>{
         let mut j = 0;
         while j< config.num_bands-1 {
             to_ret.push(if energy_matrix[i][j] - energy_matrix[i][j+1] - (energy_matrix[i-1][j]-energy_matrix[i-1][j+1]) > 0.0 {
-                1u8
+                true
             }else{
-               0u8
+               false
             });
             j = j+1;
         };
@@ -174,7 +180,7 @@ fn write_txt(filename: &str, buf: Vec<u8>)->(){
  //Network logic starts here
 
 fn try_pair<F,G>(addr: &str, dev_name: &str,config: &Config, rec_func:F, fingerprint_func:G)->Result<Vec<u8>>
-where F: Fn(&str, usize)->Vec<u8>, G: Fn(Vec<u8>)->Vec<u8>{
+where F: Fn(&str, usize)->Vec<u8>, G: Fn(Vec<u8>, Vec<u8>)->Vec<u8>{
     let mut stream= TcpStream::connect(addr)?;
 	stream.set_nonblocking(false)?;
     println!("Connected");
@@ -190,10 +196,10 @@ where F: Fn(&str, usize)->Vec<u8>, G: Fn(Vec<u8>)->Vec<u8>{
         filled = filled+t;
 	}
     //let received_data: Vec<u8> = to_i16(buffer);//Vec::from_raw_parts(buffer.as_mut_ptr() as *mut i16, buffer.len()/2, buffer.len()/2);
-    let offset=align(&buffer, &data);
-    println!("Offset: {}", offset);
-    {data.drain(0..(offset+buffer.len()));}
-    let mut fp = fingerprint_func(data);
+    //let offset=align(&buffer, &data);
+    //println!("Offset: {}", offset);
+    //{data.drain(0..(offset+buffer.len()));}
+    let mut fp = fingerprint_func(data, buffer);
     fp.resize(config.key_len, 0);   
     return Ok(fp);    
 }
@@ -240,4 +246,84 @@ fn to_i16(input: &[u8])->Vec<i16>{
 		to_ret.push(i16::from_be_bytes(chunk.try_into().unwrap()));
 	}
 	to_ret
+}
+fn from_bools(input: &[bool])->Vec<u8>{
+    let mut to_ret = Vec::with_capacity(input.len()/8);
+    for chunk in input.chunks(8){
+        let mut el = 0;
+        for i in 0..chunk.len(){
+            el+=chunk[i] as u8;
+            el = el << 1;
+        }
+        to_ret.push(el);
+    }
+    to_ret
+}
+fn from_usize(input: &[usize])->Vec<u8>{
+    let mut to_return = Vec::with_capacity(input.len()*size_of::<usize>());
+    for i in 0..input.len(){
+        let temp = input[i].to_ne_bytes();
+        for j in 0..temp.len(){
+            to_return.push(temp[j]);
+        }
+    }
+    to_return
+}
+fn check_hash(first: &[u8], second:&[u8])->bool{
+    for i in 0..first.len(){
+        if first[i] != second[i] {return false;}
+    }
+    return first.len()==second.len();
+}
+fn receive_message(data: Vec<u8>, mut received:Vec<u8>, config: &Config)->Vec<usize>{
+    let offset = align(&data, &received)/2;
+	let data = to_i16(data.as_slice());
+	let mut message = received.split_off(config.pair_frames);
+	let hash = message.split_off(message.len()-512);
+	
+	let mut test= Vec::with_capacity(message.len());
+	let field = reed_solomon::GaloisField::new(10, 0b10000001001, 0b00000000011);
+	let rs = reed_solomon::ReedSolomon{
+		field: field,
+		n: 512,
+		k: 204
+	};
+	for i in 0..200 {
+		let slice = if offset <44100/5 { &data[i*441..config.key_frames+i*441]}else{&data[offset-44100/5+i*441..config.key_frames+offset-44100/5+i*441]};
+		let fp = from_bools(&fingerprint(slice, config));
+		//let com
+		for j in 0..message.len(){
+			test[i] = message[i] as usize ^fp[i] as usize;
+		}
+		let mut test_poly = reed_solomon::Poly{coeffs: test};
+		test_poly = rs.decode(test_poly).unwrap();
+		let mut hasher = sha2::Sha512::new();
+		hasher.update(from_usize(&test_poly.coeffs));
+		let result = hasher.finalize();
+		if check_hash(&result.as_slice(), &hash){
+			return test_poly.coeffs;
+		}
+		test = test_poly.coeffs; 
+	}
+	return Vec::new();
+}
+fn send_message(message: Vec<usize>, mut recorded: Vec<u8>, config:&Config)->Vec<u8>{
+    let key = from_bools(&fingerprint(&to_i16(&recorded.split_off(config.pair_frames)), config));
+    let field = reed_solomon::GaloisField::new(10, 0b10000001001, 0b00000000011);
+	let rs = reed_solomon::ReedSolomon{
+		field: field,
+		n: 512,
+		k: 204
+	};
+    let mut mess_poly=from_usize(&rs.encode(reed_solomon::Poly{coeffs:message}).unwrap().coeffs);
+    let mut hasher = sha2::Sha512::new();
+    hasher.update(&mess_poly);
+    let result = hasher.finalize();
+    for i in 0..mess_poly.len(){
+        mess_poly[i]=mess_poly[i]^key[i];
+    }
+    recorded.extend_from_slice(&mess_poly);
+    recorded.extend_from_slice(&result.as_slice());
+    recorded
+    //todo!();
 }

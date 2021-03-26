@@ -8,7 +8,7 @@ edition = "2018"
 
 [dependencies]
 rustfft="5.0.1"
-
+sha2="0.9.3"
 hound="3.4.0"
 [target.'cfg(linux)'.dependencies]
 alsa="0.4.3"

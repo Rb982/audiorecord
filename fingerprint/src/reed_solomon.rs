@@ -1,13 +1,13 @@
 #![allow(dead_code)]
 
 fn main(){}
-struct GaloisField{
+pub struct GaloisField{
     gf_log: Vec<usize>,
     gf_ilog: Vec<usize>,
     generator: usize
 }
 impl GaloisField{
-    fn new(pow: usize, prim_poly: usize, generator: usize)->Self{
+    pub fn new(pow: usize, prim_poly: usize, generator: usize)->Self{
        
         let max: usize = 1<<pow;
         let mut gf_log = vec![0usize; max];
@@ -29,14 +29,14 @@ impl GaloisField{
             generator: generator
         }
     }
-    fn sum(&self, x: usize, y: usize)->Result<usize, &'static str>{
+   pub fn sum(&self, x: usize, y: usize)->Result<usize, &'static str>{
         if x>self.gf_log.len() || y>self.gf_log.len(){
             return Err("args out of bounds");
 
         }
          Ok(x^y)
     }
-    fn mult(&self, x: usize, y: usize)->Result<usize, &'static str>{
+   pub fn mult(&self, x: usize, y: usize)->Result<usize, &'static str>{
         if x>self.gf_log.len() || y>self.gf_log.len(){
             return Err("args out of bounds");
 
@@ -46,7 +46,7 @@ impl GaloisField{
         }
          Ok(self.gf_ilog[(self.gf_log[x]+self.gf_log[y]) % (self.gf_ilog.len()-1)])
     }
-    fn div(&self, x: usize, y: usize)->Result<usize, &'static str>{
+   pub fn div(&self, x: usize, y: usize)->Result<usize, &'static str>{
         if x>self.gf_log.len() || y>self.gf_log.len(){
             return Err("args out of bounds");
 
@@ -59,7 +59,7 @@ impl GaloisField{
         }
          Ok(self.gf_ilog[((self.gf_ilog.len()-1)+self.gf_log[x]-self.gf_log[y]) % (self.gf_ilog.len()-1)])
     }
-    fn mult_inverse(&self, x:usize)->Option<usize>{
+    pub fn mult_inverse(&self, x:usize)->Option<usize>{
         if x==0{
             return None
         }
@@ -72,14 +72,14 @@ impl GaloisField{
         None
 
     }
-    fn pow(&self, x:usize, n:usize)->Result<usize, &'static str>{
+    pub fn pow(&self, x:usize, n:usize)->Result<usize, &'static str>{
         let mut to_ret = 1;
         for _i in 0..n{
             to_ret = self.mult(to_ret, x)?;
         }
         Ok(to_ret)
     }
-    fn eval_poly_at(&self, f:&Poly, x: usize)->Result<usize, &'static str>{
+    pub fn eval_poly_at(&self, f:&Poly, x: usize)->Result<usize, &'static str>{
         let mut to_ret = f.coeffs[0];
         let mut x_curr = x;
         for i in 1..f.coeffs.len(){
@@ -88,7 +88,7 @@ impl GaloisField{
         }
         Ok(to_ret)
     }
-    fn roots(&self, f:&Poly)->Result<Vec<usize>, &'static str>{
+    pub fn roots(&self, f:&Poly)->Result<Vec<usize>, &'static str>{
         let deg = f.deg();
         let mut to_ret = Vec::with_capacity(deg);
         //let mut alpha = self.generator;
@@ -102,7 +102,7 @@ impl GaloisField{
         }
         Ok(to_ret)
     }
-    fn sum_poly(&self, first: &Poly, second: &Poly)->Result<Poly, &'static str>{
+    pub fn sum_poly(&self, first: &Poly, second: &Poly)->Result<Poly, &'static str>{
         let (min, max, longest)= if first.deg()>second.deg(){
             (second.deg()+1, first.deg()+1, first)
         }else{
@@ -118,7 +118,7 @@ impl GaloisField{
         Ok(Poly{coeffs: new_coeffs})
         //todo!();
     }
-    fn mult_poly(&self, first: &Poly, second: &Poly)->Result<Poly, &'static str>{
+    pub fn mult_poly(&self, first: &Poly, second: &Poly)->Result<Poly, &'static str>{
         let f_deg = first.deg(); 
         let s_deg = second.deg(); 
         let mut new_coeffs=Vec::with_capacity(f_deg+s_deg+1);
@@ -133,7 +133,7 @@ impl GaloisField{
         }
         Ok(Poly{coeffs: new_coeffs})
     }
-    fn div_poly(&self, dividend: &Poly, divisor: &Poly)->Result<(Poly, Poly), &'static str>{
+    pub fn div_poly(&self, dividend: &Poly, divisor: &Poly)->Result<(Poly, Poly), &'static str>{
         //todo!();
         
         let mut result  = vec![0; dividend.deg() - divisor.deg()+1];
@@ -154,7 +154,7 @@ impl GaloisField{
         }
         Ok((Poly{coeffs: result}, remainder))
     }
-    fn rref(&self, mut mat: Vec<Vec<usize>>)->Result<Vec<Vec<usize>>, &'static str>{
+    pub fn rref(&self, mut mat: Vec<Vec<usize>>)->Result<Vec<Vec<usize>>, &'static str>{
         let mut leading_coeff=0;
         for i in 0..mat.len(){
             while mat[i][leading_coeff]==0 {
@@ -188,12 +188,12 @@ impl GaloisField{
     }
 }
 #[derive(Clone, Debug)]
-struct Poly{
-    coeffs: Vec<usize>
+pub struct Poly{
+   pub coeffs: Vec<usize>
 }
 
 impl Poly{
-    fn deg(&self)->usize{
+    pub fn deg(&self)->usize{
         for i in 1..self.coeffs.len()+1{
             if self.coeffs[self.coeffs.len()-i]!=0 {
                 return self.coeffs.len()-i
@@ -202,13 +202,13 @@ impl Poly{
         return 0;
     }
 
-    fn mononomial(coeff: usize, deg: usize)->Self{
+    pub fn mononomial(coeff: usize, deg: usize)->Self{
         let mut coeffs = vec![0; deg+1];
         coeffs[deg] = coeff;
         Poly{coeffs}
     }
     //Equivalent to multiplying by X^count
-    fn shift(mut self, count: usize)->Self{
+    pub fn shift(mut self, count: usize)->Self{
         
         let mut prepend = vec![0usize; count];
         prepend.append(&mut self.coeffs);
@@ -219,17 +219,17 @@ impl Poly{
 }
 
 
-struct ReedSolomon{
-    n: usize,
-    k: usize,
-    field: GaloisField
+pub struct ReedSolomon{
+   pub n: usize,
+   pub k: usize,
+   pub field: GaloisField
 }
 
 impl ReedSolomon{
     //Only way this can fail is if the original field had an invalid generator polynomial
     //Since in such a case everything we do is nonsense, we can assume that doesn't happen
     //Consequently, we can return a poly instead of a Result<Poly>
-    fn generator_poly(&self)->Poly{
+    pub fn generator_poly(&self)->Poly{
       
         let mut result = Poly::mononomial(1, 0);
         let mut temp=Poly{coeffs: vec![self.field.generator, 1]};
@@ -243,13 +243,13 @@ impl ReedSolomon{
         }
         result
     }
-    fn encode(&self, mut message: Poly)->Result<Poly, &'static str>{
+    pub fn encode(&self, mut message: Poly)->Result<Poly, &'static str>{
         message = message.shift(self.n-self.k);
         let (_, ck) = self.field.div_poly(&message, &self.generator_poly())?;
         self.field.sum_poly(&message, &ck)
     }
     //As in generator_poly, no need to return a result because there's no way to get an error with a correctly built GF
-    fn syndrome_components(&self, received: &Poly)->Vec<usize>{
+    pub fn syndrome_components(&self, received: &Poly)->Vec<usize>{
         let mut to_ret = Vec::with_capacity(self.n-self.k);
         let mut curr = self.field.generator;
         for _i in 0..(self.n-self.k){
@@ -258,7 +258,7 @@ impl ReedSolomon{
         }
         to_ret
     }
-    fn berlekamp(&self, syndrome_components: &Vec<usize>)->Poly{
+    pub fn berlekamp(&self, syndrome_components: &Vec<usize>)->Poly{
         let mut d = Vec::with_capacity(self.n-self.k);
         d.push(syndrome_components[0]);
         let mut sigma: Vec<Poly> = Vec::with_capacity(self.n-self.k);
@@ -304,7 +304,7 @@ impl ReedSolomon{
         sigma.pop().unwrap()
         //sigma[sigma.len()-1]
     }
-    fn error_locs(&self, elp_r:&Poly)->Result<Vec<usize>, &'static str>{
+    pub fn error_locs(&self, elp_r:&Poly)->Result<Vec<usize>, &'static str>{
         //println!("ELP: {:#?}", elp_r);
         let mut to_ret = self.field.roots(elp_r)?;
         for i in 0..to_ret.len() {
@@ -315,7 +315,7 @@ impl ReedSolomon{
         } 
         Ok(to_ret)
     }
-    fn error_vals(&self, elc: &Vec<usize>, synd: &Vec<usize>)->Result<Vec<usize>, &'static str>{
+    pub fn error_vals(&self, elc: &Vec<usize>, synd: &Vec<usize>)->Result<Vec<usize>, &'static str>{
         
             let mut mat = Vec::with_capacity(elc.len());
             let mut first_row = elc.clone();
@@ -344,7 +344,7 @@ impl ReedSolomon{
         
 
     }
-    fn decode(&self, received: Poly)->Result<Poly, &'static str>{
+    pub fn decode(&self, received: Poly)->Result<Poly, &'static str>{
         /*
             1. Syndrome components
             2. Use syndrome components to get error locator poly from Berlekamp
@@ -373,6 +373,17 @@ impl ReedSolomon{
         let to_ret = self.field.sum_poly(&received, &error_poly)?;
         //{to_ret.coeffs.drain(0..(self.n-self.k));}
         Ok(to_ret)
+    }
+    pub fn commit(&self, message: Vec<usize>, key: Vec<usize>)->Result<Vec<usize>, &'static str>{
+        let temp = Poly{coeffs: message};
+        let mut to_ret = self.encode(temp)?;
+        for i in 0..to_ret.coeffs.len(){
+            to_ret.coeffs[i] = to_ret.coeffs[i]^key[i%key.len()];
+        }
+        Ok(to_ret.coeffs)
+    }
+    fn decommit(&self, message: &Vec<usize>, key: &[usize])->Result<Vec<usize>, &'static str>{
+        todo!()
     }
 }
 
