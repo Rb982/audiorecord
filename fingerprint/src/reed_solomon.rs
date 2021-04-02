@@ -154,6 +154,7 @@ impl GaloisField{
         }
         Ok((Poly{coeffs: result}, remainder))
     }
+    //Puts a matrix into reduced row echelon form.  Caller is responsible for ensuring that mat has valid dimensions.
     pub fn rref(&self, mut mat: Vec<Vec<usize>>)->Result<Vec<Vec<usize>>, &'static str>{
         let mut leading_coeff=0;
         for i in 0..mat.len(){
@@ -201,7 +202,7 @@ impl Poly{
         }
         return 0;
     }
-
+    //Return a polynomial of the form coeff * X^deg.
     pub fn mononomial(coeff: usize, deg: usize)->Self{
         let mut coeffs = vec![0; deg+1];
         coeffs[deg] = coeff;
@@ -344,6 +345,8 @@ impl ReedSolomon{
         
 
     }
+    //Corrects errors in the received polynomial and returns the result.
+    //Note that decode does not remove the check bits appended by encode, so decode(encode(x)) is not equal to x.
     pub fn decode(&self, received: Poly)->Result<Poly, &'static str>{
         /*
             1. Syndrome components
@@ -382,9 +385,7 @@ impl ReedSolomon{
         }
         Ok(to_ret.coeffs)
     }
-    fn decommit(&self, message: &Vec<usize>, key: &[usize])->Result<Vec<usize>, &'static str>{
-        todo!()
-    }
+    
 }
 
 

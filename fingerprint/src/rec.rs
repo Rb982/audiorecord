@@ -56,6 +56,11 @@ let min =min as usize;
 //    println!("Received following data: {:#?}", buf);
    // boxed::Box::new(buf).to_vec()
 }
+//Dummy method to let functions that depend on record type check correctly on mac
+#[cfg(target_os="macos")]
+pub fn record(_dev_name: &str, frames: usize)->Vec<i16>{
+    vec![0i16; frames]
+}
 #[cfg(target_os="linux")]
 pub fn playback(dev_name: &str, buf: &Vec<i16>)->(){
     let writePCM=PCM::new(dev_name, Direction::Playback, false).unwrap();
@@ -69,6 +74,8 @@ pub fn playback(dev_name: &str, buf: &Vec<i16>)->(){
     let oio = writePCM.io_i16().unwrap();
     oio.writei(&buf.as_slice());
 }
+
+
 pub fn write_wav(filename: &str, buf: &Vec<i16>)->(){
     let specs = hound::WavSpec{
         channels: 1,

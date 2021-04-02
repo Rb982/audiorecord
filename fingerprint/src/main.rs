@@ -21,40 +21,62 @@ struct Config {
     rec_frames: usize,
     pair_frames: usize,
     key_len: usize,
-    key_frames: usize
+    key_frames: usize,
+    send_len: usize,
+    rs_n: usize,
+    rs_k: usize,
+    gf_pow: usize,
+    gf_gen: usize,
+    gf_prim: usize,
 }
 
 fn main() {
-    todo!();
-    /*let config = Config{
+   // todo!();
+    //Random sequence of u8s for test
+    let message = vec![249,10,147,43,171,167,4,135,1,70,209,183,237,48,169,125,157,169,93,155,36,181,101,221,217,11,201,43,160,172,247,181,145,9,174,94,248,241,108,176,163,242,249,154,167,5,207,227,197,240,58,219,151,9,158,90,235,230,180,221,198,135,171,43];
+    let config = Config{
         slice_size: 16537,
         num_bands: 33,
         rec_frames: 441000,
         pair_frames: 132300,
-        key_len: 512
-        
+        key_len: 512,
+        key_frames: 512,
+        send_len: 0,
+        rs_n: 512,
+        rs_k: 204,
+        gf_pow: 10,
+        gf_gen: 0b00000000011,
+        gf_prim: 0b10000001001
     };
     
     let mut args = env::args();
     let _ = args.next();
-    let mode = args.next();
+    let mode = args.next().expect("arg missing");
     let addr =args.next().expect("arg missing");
     let dev_name = args.next().expect("arg missing");
-    for i in 1..10{
-        match mode{
-            "r" => rec_pair(&addr, &dev_name, &config, |x, y| rec::record(x,y), ),
-            "s" => try_pair(&addr, &dev_name, &config),
-            _ => panic!("first argument must either be r or s")
-        }
-    }*/
+    let mut count = 0;
+    for _i in 1..10{
+        if let Ok(result) = match &mode[..]{
+            "s" => try_pair(&addr, &dev_name, &config, |x, y| to_u8(rec::record(x,y)), |x, y| from_usize(&receive_message(x, y, &config))),
+            "r" => rec_pair(&addr, &dev_name, &config, |x,y| to_u8(rec::record(x,y)), |x| build_message(message.clone(), x, &config)),
+            _ => Ok(Vec::new())
+        } {
+            if result.len() > 0 {count+=1;}
+        };
+        
+    }
+    println!("Made ten attempts; succeeded on {}", count);
 }
-fn distance(first: &Vec<u8>, second: &Vec<u8>)->usize{
+//Compare two vecs of bools; return the number of locations that differ between the two.
+//Assumes without checking that first.len()==second.len(); if second.len() < first.len(), will go beyond array bounds.
+fn distance(first: &Vec<bool>, second: &Vec<bool>)->usize{
     let mut sum =0;
     for i in 0..first.len(){
         if first[i]!=second[i] {sum = sum+1;}
     }
     sum
 }
+//Given two time series, find the offset between the two.  Assumes second started some time before first.
 fn align(first: &Vec<u8>, second: &Vec<u8>)->usize {
     let mut offset = (0, 0isize);
     let max_len = if first.len() < second.len() { first.len() } else {second.len()};
@@ -114,7 +136,7 @@ fn fourier(data:Vec<f32>, slice_size: usize)->Vec<Complex32>{
     plan.process(&mut buffer);
     buffer.to_vec()
 }
-
+//Generates a fingerprint of an audio signal using Sigg's algorithm.
 fn fingerprint(data: &[i16], config: &Config)->Vec<bool>{
     //Probably should end up with this back inside the call to fourier, and just replace calls to data.len() with transformed.len()
     if {data.len()%config.slice_size !=0} {
@@ -178,7 +200,13 @@ fn write_txt(filename: &str, buf: Vec<u8>)->(){
  
 
  //Network logic starts here
-
+/*
+ Attempt to pair two devices.
+ addr: network address of receiving device
+ rec_func should return a vec of length equal to the usize passed to it.
+ fingerprint_func receives the vec returned by rec_func, as well as the vec sent by the other pairing device.
+ The result of fingerprint_func is returned as the result of try_pair.
+*/
 fn try_pair<F,G>(addr: &str, dev_name: &str,config: &Config, rec_func:F, fingerprint_func:G)->Result<Vec<u8>>
 where F: Fn(&str, usize)->Vec<u8>, G: Fn(Vec<u8>, Vec<u8>)->Vec<u8>{
     let mut stream= TcpStream::connect(addr)?;
@@ -186,13 +214,13 @@ where F: Fn(&str, usize)->Vec<u8>, G: Fn(Vec<u8>, Vec<u8>)->Vec<u8>{
     println!("Connected");
     let buf=[0; 1];
     stream.write(&buf)?;    
-    let mut data = rec_func(dev_name, config.rec_frames);
-    let mut buffer = Vec::with_capacity(config.pair_frames);
-	buffer.resize(config.pair_frames, 0);
+    let data = rec_func(dev_name, config.rec_frames);
+    let mut buffer = Vec::with_capacity(config.send_len);
+	buffer.resize(config.send_len, 0);
 	let mut filled = 0;
     let buf = buffer.as_mut_slice();
-	while filled < config.pair_frames*2 {
-        let t =  stream.read(&mut buf[filled..config.pair_frames*2])?;
+	while filled < config.send_len {
+        let t =  stream.read(&mut buf[filled..config.send_len])?;
         filled = filled+t;
 	}
     //let received_data: Vec<u8> = to_i16(buffer);//Vec::from_raw_parts(buffer.as_mut_ptr() as *mut i16, buffer.len()/2, buffer.len()/2);
@@ -204,6 +232,9 @@ where F: Fn(&str, usize)->Vec<u8>, G: Fn(Vec<u8>, Vec<u8>)->Vec<u8>{
     return Ok(fp);    
 }
 #[allow(unreachable_code)]
+/*
+Complement of rec_pair.
+*/
 fn rec_pair<F,G>(addr: &str, dev_name: &str,config: &Config, rec_func:F, fingerprint_func:G)->Result<Vec<u8>>
 where F: Fn(&str, usize)->Vec<u8>,
     G: Fn(Vec<u8>)->Vec<u8>{
@@ -215,15 +246,16 @@ where F: Fn(&str, usize)->Vec<u8>,
         loop{
             let t = stream.read(&mut buf)?;
             if t != 0{
-                let mut pair_data = rec_func(dev_name, config.rec_frames);
-                let fp_data = pair_data.split_off(config.pair_frames);
+                let data = fingerprint_func(rec_func(dev_name, config.rec_frames));
+                //let fp_data = pair_data.split_off(config.pair_frames);
                 //let to_send: Vec<u8> = to_u8(pair_data);//Vec::from_raw_parts(pair_data.as_mut_ptr() as *mut u8, pair_data.len()*2, pair_data.capacity()*2);
-                stream.write(&pair_data)?;
-                let mut res=fingerprint_func(fp_data);
+                stream.write(&data)?;
+                /*let mut res=fingerprint_func(fp_data);
                 println!("Fingerprint has len: {}", res.len());
                 res.resize(config.key_len, 0);
                 //write_txt("./receiver_key.txt", res);
-                return Ok(res);
+                return Ok(res);*/
+                return Ok(data);
             }
         }
         unreachable!();
@@ -281,19 +313,20 @@ fn receive_message(data: Vec<u8>, mut received:Vec<u8>, config: &Config)->Vec<us
 	let mut message = received.split_off(config.pair_frames);
 	let hash = message.split_off(message.len()-512);
 	
-	let mut test= Vec::with_capacity(message.len());
-	let field = reed_solomon::GaloisField::new(10, 0b10000001001, 0b00000000011);
+	let mut test=vec![0, message.len()]; //Vec::with_capacity(message.len());
+    
+	let field = reed_solomon::GaloisField::new(config.gf_pow, config.gf_prim, config.gf_gen);
 	let rs = reed_solomon::ReedSolomon{
 		field: field,
-		n: 512,
-		k: 204
+		n: config.rs_n,
+		k: config.rs_k
 	};
 	for i in 0..200 {
 		let slice = if offset <44100/5 { &data[i*441..config.key_frames+i*441]}else{&data[offset-44100/5+i*441..config.key_frames+offset-44100/5+i*441]};
 		let fp = from_bools(&fingerprint(slice, config));
 		//let com
 		for j in 0..message.len(){
-			test[i] = message[i] as usize ^fp[i] as usize;
+			test[j] = message[j] as usize ^fp[j] as usize;
 		}
 		let mut test_poly = reed_solomon::Poly{coeffs: test};
 		test_poly = rs.decode(test_poly).unwrap();
@@ -307,13 +340,13 @@ fn receive_message(data: Vec<u8>, mut received:Vec<u8>, config: &Config)->Vec<us
 	}
 	return Vec::new();
 }
-fn send_message(message: Vec<usize>, mut recorded: Vec<u8>, config:&Config)->Vec<u8>{
+fn build_message(message: Vec<usize>, mut recorded: Vec<u8>, config:&Config)->Vec<u8>{
     let key = from_bools(&fingerprint(&to_i16(&recorded.split_off(config.pair_frames)), config));
-    let field = reed_solomon::GaloisField::new(10, 0b10000001001, 0b00000000011);
+    let field = reed_solomon::GaloisField::new(config.gf_pow, config.gf_prim, config.gf_gen);
 	let rs = reed_solomon::ReedSolomon{
 		field: field,
-		n: 512,
-		k: 204
+		n: config.rs_n,
+		k: config.rs_k
 	};
     let mut mess_poly=from_usize(&rs.encode(reed_solomon::Poly{coeffs:message}).unwrap().coeffs);
     let mut hasher = sha2::Sha512::new();
