@@ -10,5 +10,5 @@ edition = "2018"
 rustfft="5.0.1"
 sha2="0.9.3"
 hound="3.4.0"
-[target.'cfg(linux)'.dependencies]
+[target.'cfg(target_os="linux")'.dependencies]
 alsa="0.4.3"

@@ -56,12 +56,18 @@ fn main() {
     let dev_name = args.next().expect("arg missing");
     let mut count = 0;
     for _i in 1..10{
-        if let Ok(result) = match &mode[..]{
+        let attempt = match &mode[..]{
             "s" => try_pair(&addr, &dev_name, &config, |x, y| to_u8(rec::record(x,y)), |x, y| from_usize(&receive_message(x, y, &config))),
             "r" => rec_pair(&addr, &dev_name, &config, |x,y| to_u8(rec::record(x,y)), |x| build_message(message.clone(), x, &config)),
             _ => Ok(Vec::new())
-        } {
-            if result.len() > 0 {count+=1;}
+        };
+        match attempt{
+            Ok(t)=>{
+                if t.len()>0 {count+=1;}
+            },
+            Err(e)=>{
+                println!("{:#?}", e);
+            }
         };
         
     }
