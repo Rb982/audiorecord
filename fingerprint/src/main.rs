@@ -35,6 +35,8 @@ fn main() {
     //Random sequence of u8s for test
     //println!("Sanity check: usize has size: {}", size_of::<usize>());
     let message = vec![249,10,147,43,171,167,4,135,1,70,209,183,237,48,169,125,157,169,93,155,36,181,101,221,217,11,201,43,160,172,247,181,145,9,174,94,248,241,108,176,163,242,249,154,167,5,207,227,197,240,58,219,151,9,158,90,235,230,180,221,198,135,171,43];
+    //println!("Message len is, ", message.len()
+
     //Todo: Double check all my dimensions; I've got an inconsistency somewhere
     //Specifically, message len and key len are not equal and they should be
     //Think the issue is that key len is 512 bits, and message len is 512 words
@@ -64,7 +66,8 @@ fn main() {
     };
     config.rec_frames=config.pair_frames+(config.slice_size*config.slices);
     config.key_len=config.slices*(config.num_bands-1);
-    config.send_len=config.pair_frames+(config.rs_n*config.gf_pow)/8+64+if config.rs_n%config.gf_pow==0 {0} else{1}; 
+    //Something strange is occurring here.  Should be +64, since we're hashing with sha-512, but 16 is what actually shows up
+    config.send_len=config.pair_frames+(config.rs_n*config.gf_pow)/8+16; 
     let mut args = env::args();
     let _ = args.next();
     let mode = args.next().expect("arg missing");
@@ -247,14 +250,14 @@ where F: Fn(&str, usize)->Vec<u8>, G: Fn(Vec<u8>, Vec<u8>)->Vec<u8>{
         //println!("Sanity check; inside read loop?");
         let t =  stream.read(&mut buf[filled..config.send_len])?;
         filled = filled+t;
-        //println!("filled: {}", filled);
+        println!("filled: {}", filled);
 	}
     //let received_data: Vec<u8> = to_i16(buffer);//Vec::from_raw_parts(buffer.as_mut_ptr() as *mut i16, buffer.len()/2, buffer.len()/2);
     //let offset=align(&buffer, &data);
     //println!("Offset: {}", offset);
     //{data.drain(0..(offset+buffer.len()));}
-    let mut fp = fingerprint_func(data, buffer);
-    fp.resize(config.key_len, 0);   
+    let fp = fingerprint_func(data, buffer);
+    //fp.resize(config.key_len, 0);   
     return Ok(fp);    
 }
 #[allow(unreachable_code)]
@@ -337,7 +340,7 @@ fn receive_message(data: Vec<u8>, mut received:Vec<u8>, config: &Config)->Vec<us
     let offset = align(&data, &received)/2;
 	let data = to_i16(data.as_slice());
 	let mut message = received.split_off(config.pair_frames);
-	let hash = message.split_off(message.len()-64);
+	let hash = message.split_off(message.len()-16);
     let message = to_upow(message, config.gf_pow);
 	
 	let mut test=vec![0, message.len()]; //Vec::with_capacity(message.len());
@@ -380,7 +383,7 @@ fn receive_pair(data: Vec<u8>, mut received:Vec<u8>, config: &Config)->Vec<usize
 	let mut message = received.split_off(config.pair_frames);
     //Shape of the message is the same in both cases, but for pairing we don't actually need the hash
 
-	let _hash = message.split_off(message.len()-64);
+	let _hash = message.split_off(message.len()-16);
     let message = to_upow(message, config.gf_pow);
 	
 	let mut test=vec![0, message.len()]; //Vec::with_capacity(message.len());
@@ -431,12 +434,15 @@ fn build_message(message: Vec<usize>, mut recorded: Vec<u8>, config:&Config)->Ve
     let mut hasher = sha2::Sha512::new();
     hasher.update(&mess_poly);
     let result = hasher.finalize();
+    println!("Hash Result is of length {}", result.as_slice().len())
     let min = if mess_poly.len() < key.len() {mess_poly.len()} else {key.len()};
     for i in 0..min{
         mess_poly[i]=mess_poly[i]^key[i];
     }
+    println!("message poly is of length {} " +mess_poly.len());
     recorded.extend_from_slice(&mess_poly);
     recorded.extend_from_slice(&result.as_slice());
+    println!("To send is of length {} " +recorded.len());
     recorded
     //todo!();
 }
