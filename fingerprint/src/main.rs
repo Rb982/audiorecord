@@ -41,21 +41,30 @@ fn main() {
     //Since each word is in fact 10 bits long, that's an issue
     //Config might be using some unneeded values as well; should go through and check
     //Definitely some fraction of config can be inferred from the rest of it, so should remove excess config options
-    let config = Config{
+    //In particular, if I know slices, slice size, and pair_frames, I must record slices*slice_size+pair_frames total bits
+    //If I know the number of bands and the number of slices, I know the key len
+    //If I know the rs_n and the pair bits, I should know the send_len
+    //Hence, rec_frames, key_len, and send_len are redundant and can be removed
+    /*
+        For the moment, I can force those relations to hold by just editing the config object
+    */
+    let mut config = Config{
         slice_size: 16537,
         num_bands: 33,
-        rec_frames: 893002,
-        pair_frames: 132300,
-        key_len: 1024,
-        slices: 32,
-        send_len: 132956,
-        rs_n: 512,
+        rec_frames: 0,
+        pair_frames: 13230,
+        key_len: 0,
+        slices: 16,
+        send_len: 0,
+        rs_n: 256,
         rs_k: 102,
         gf_pow: 10,
         gf_gen: 0b00000000011,
         gf_prim: 0b10000001001
     };
-    
+    config.rec_frames=config.pair_frames+(config.slice_size*config.slices);
+    config.key_len=config.slices*(config.num_bands-1);
+    config.send_len=config.pair_frames+(config.rs_n*config.gf_pow)/8+64+if config.rs_n%config.gf_pow==0 {0} else{1}; 
     let mut args = env::args();
     let _ = args.next();
     let mode = args.next().expect("arg missing");
