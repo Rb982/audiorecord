@@ -357,17 +357,17 @@ impl ReedSolomon{
 
         */
         let syndrome_components = self.syndrome_components(&received);
-        //println!("Syndrome components: {:#?}", syndrome_components);
+        println!("Syndrome components: {:#?}", syndrome_components);
         let mut err_loc_poly_r = self.berlekamp(&syndrome_components);
-       // println!("ELPR{:#?}", err_loc_poly_r);
+       println!("ELPR{:#?}", err_loc_poly_r);
         if err_loc_poly_r.deg()==0 {
             return Ok(received);
         }
         err_loc_poly_r.coeffs.as_mut_slice().reverse();
         let err_locs = self.error_locs(&err_loc_poly_r)?;
-       // println!("Error locations: {:#?}", err_locs);
+        println!("Error locations: {:#?}", err_locs);
         let error_vals = self.error_vals(&err_locs, &syndrome_components)?;
-       // println!("Error values: {:#?}", error_vals);
+        println!("Error values: {:#?}", error_vals);
         let mut error_poly = Poly::mononomial(0,0);
         for i in 0..err_locs.len(){
             error_poly = self.field.sum_poly(&error_poly, &Poly::mononomial(error_vals[i], err_locs[i]))?
@@ -596,6 +596,11 @@ mod tests{
 
 
         let result = rs.decode(received)?;
+        let syndrome_components=rs.syndrome_components(&result);
+        //println!("Syndrome of decoded word: {:#?}", syndrome_components);
+        for i in 0..syndrome_components.len(){
+            assert!(syndrome_components[i]==0, "Did not decode to valid word");
+        }
         for i in 0..result.coeffs.len(){
             assert!(result.coeffs[i]==correct[i], "received: {:#?}, expected: {:#?}", result, correct);
         }

@@ -33,15 +33,16 @@ struct Config {
 fn main() {
    // todo!();
     //Random sequence of u8s for test
+    println!("Sanity check: usize has size: {}", size_of::<usize>());
     let message = vec![249,10,147,43,171,167,4,135,1,70,209,183,237,48,169,125,157,169,93,155,36,181,101,221,217,11,201,43,160,172,247,181,145,9,174,94,248,241,108,176,163,242,249,154,167,5,207,227,197,240,58,219,151,9,158,90,235,230,180,221,198,135,171,43];
     let config = Config{
         slice_size: 16537,
         num_bands: 33,
-        rec_frames: 441000,
+        rec_frames: 446501,
         pair_frames: 132300,
         key_len: 512,
         key_frames: 512,
-        send_len: 0,
+        send_len: 133016,
         rs_n: 512,
         rs_k: 204,
         gf_pow: 10,
@@ -57,8 +58,10 @@ fn main() {
     let mut count = 0;
     for _i in 1..10{
         let attempt = match &mode[..]{
+            //Todo: fix my function names
             "s" => try_pair(&addr, &dev_name, &config, |x, y| to_u8(rec::record(x,y)), |x, y| from_usize(&receive_message(x, y, &config))),
             "r" => rec_pair(&addr, &dev_name, &config, |x,y| to_u8(rec::record(x,y)), |x| build_message(message.clone(), x, &config)),
+            "p" => try_pair(&addr, &dev_name, &config, |x, y| to_u8(rec::record(x,y)), |x, y| from_usize(&receive_pair(x, y, &config))),
             _ => Ok(Vec::new())
         };
         match attempt{
@@ -226,8 +229,10 @@ where F: Fn(&str, usize)->Vec<u8>, G: Fn(Vec<u8>, Vec<u8>)->Vec<u8>{
 	let mut filled = 0;
     let buf = buffer.as_mut_slice();
 	while filled < config.send_len {
+        println!("Sanity check; inside read loop?");
         let t =  stream.read(&mut buf[filled..config.send_len])?;
         filled = filled+t;
+        println!("filled: {}", filled);
 	}
     //let received_data: Vec<u8> = to_i16(buffer);//Vec::from_raw_parts(buffer.as_mut_ptr() as *mut i16, buffer.len()/2, buffer.len()/2);
     //let offset=align(&buffer, &data);
@@ -247,7 +252,7 @@ where F: Fn(&str, usize)->Vec<u8>,
     let listener = TcpListener::bind(addr)?;
     for stream in listener.incoming() {
         let mut stream = stream?;//.expect("Failed to unwrap stream in rec_pair");
-        let mut buf= Vec::with_capacity(1);
+        let mut buf= vec![0;1];
         let mut buf = buf.as_mut_slice();
         loop{
             let t = stream.read(&mut buf)?;
@@ -300,7 +305,7 @@ fn from_bools(input: &[bool])->Vec<u8>{
 fn from_usize(input: &[usize])->Vec<u8>{
     let mut to_return = Vec::with_capacity(input.len()*size_of::<usize>());
     for i in 0..input.len(){
-        let temp = input[i].to_ne_bytes();
+        let temp = input[i].to_be_bytes();
         for j in 0..temp.len(){
             to_return.push(temp[j]);
         }
@@ -317,7 +322,8 @@ fn receive_message(data: Vec<u8>, mut received:Vec<u8>, config: &Config)->Vec<us
     let offset = align(&data, &received)/2;
 	let data = to_i16(data.as_slice());
 	let mut message = received.split_off(config.pair_frames);
-	let hash = message.split_off(message.len()-512);
+	let hash = message.split_off(message.len()-64);
+    let message = to_upow(message, config.gf_pow);
 	
 	let mut test=vec![0, message.len()]; //Vec::with_capacity(message.len());
     
@@ -329,10 +335,10 @@ fn receive_message(data: Vec<u8>, mut received:Vec<u8>, config: &Config)->Vec<us
 	};
 	for i in 0..200 {
 		let slice = if offset <44100/5 { &data[i*441..config.key_frames+i*441]}else{&data[offset-44100/5+i*441..config.key_frames+offset-44100/5+i*441]};
-		let fp = from_bools(&fingerprint(slice, config));
+		let fp = to_upow(from_bools(&fingerprint(slice, config)), config.gf_pow);
 		//let com
 		for j in 0..message.len(){
-			test[j] = message[j] as usize ^fp[j] as usize;
+			test[j] = message[j] ^fp[j];
 		}
 		let mut test_poly = reed_solomon::Poly{coeffs: test};
 		test_poly = rs.decode(test_poly).unwrap();
@@ -346,15 +352,60 @@ fn receive_message(data: Vec<u8>, mut received:Vec<u8>, config: &Config)->Vec<us
 	}
 	return Vec::new();
 }
+//A bit weird that we're returning a vec instead of a bool, but necessary to let both the crypto and pairing have the same types
+//Interpret an empty vec as a failed attempt to pair, and a non-empty vec as a successful attempt
+//TODO: Refactor to return a result
+fn receive_pair(data: Vec<u8>, mut received:Vec<u8>, config: &Config)->Vec<usize>{
+    let offset = align(&data, &received)/2;
+	let data = to_i16(data.as_slice());
+	let mut message = received.split_off(config.pair_frames);
+    //Shape of the message is the same in both cases, but for pairing we don't actually need the hash
+
+	let _hash = message.split_off(message.len()-64);
+    let message = to_upow(message, config.gf_pow);
+	
+	let mut test=vec![0, message.len()]; //Vec::with_capacity(message.len());
+    
+	let field = reed_solomon::GaloisField::new(config.gf_pow, config.gf_prim, config.gf_gen);
+	let rs = reed_solomon::ReedSolomon{
+		field: field,
+		n: config.rs_n,
+		k: config.rs_k
+	};
+	'outer: for i in 0..200 {
+		let slice = if offset <44100/5 { &data[i*441..config.key_frames+i*441]}else{&data[offset-44100/5+i*441..config.key_frames+offset-44100/5+i*441]};
+		let fp = to_upow(from_bools(&fingerprint(slice, config)), config.gf_pow);
+		//let com
+		for j in 0..message.len(){
+			test[j] = message[j]^fp[j];
+		}
+		let mut test_poly = reed_solomon::Poly{coeffs: test};
+		test_poly = rs.decode(test_poly).unwrap();
+		let syndrome_components=rs.syndrome_components(&test_poly);
+        test = test_poly.coeffs;
+        for i in 0..syndrome_components.len(){
+            //If there's a nonzero syndrome component in the decoded word, we failed to decode to a valid key word and can continue
+            if syndrome_components[i]!=0 {continue 'outer;}
+        }
+        return syndrome_components;
+		//; 
+	}
+	return Vec::new();
+}
 fn build_message(message: Vec<usize>, mut recorded: Vec<u8>, config:&Config)->Vec<u8>{
-    let key = from_bools(&fingerprint(&to_i16(&recorded.split_off(config.pair_frames)), config));
+    let mut to_fp = to_i16(&recorded.split_off(config.pair_frames));
+    //Pad to a valid len; prevents a panic in fingerprint
+    if (to_fp.len() % config.slice_size != 0){
+        to_fp.resize(to_fp.len()+config.slice_size - (to_fp.len()%config.slice_size), 0);
+    }
+    let key = from_bools(&fingerprint(&to_fp, config));
     let field = reed_solomon::GaloisField::new(config.gf_pow, config.gf_prim, config.gf_gen);
 	let rs = reed_solomon::ReedSolomon{
 		field: field,
 		n: config.rs_n,
 		k: config.rs_k
 	};
-    let mut mess_poly=from_usize(&rs.encode(reed_solomon::Poly{coeffs:message}).unwrap().coeffs);
+    let mut mess_poly=from_upow(rs.encode(reed_solomon::Poly{coeffs:message}).unwrap().coeffs, config.gf_pow);
     let mut hasher = sha2::Sha512::new();
     hasher.update(&mess_poly);
     let result = hasher.finalize();
@@ -365,4 +416,43 @@ fn build_message(message: Vec<usize>, mut recorded: Vec<u8>, config:&Config)->Ve
     recorded.extend_from_slice(&result.as_slice());
     recorded
     //todo!();
+}
+fn from_upow(mut data: Vec<usize>, pow: usize)->Vec<u8>{
+    let mask = 1 << pow;
+    let mut to_ret = Vec::with_capacity(data.len() * pow/8);
+    let mut next = 0;
+    for i in 0..data.len(){
+        for j in 0..pow{
+            next = next << 1;
+            if data[i]&mask != 0 {
+                next = next + 1;
+            }
+            data[i]=data[i]<<1;
+            if ((pow*i)+j+1) % 8 == 0{
+                to_ret.push(next);
+                next = 0;
+            }
+        }
+    }
+    to_ret
+}
+fn to_upow(mut data: Vec<u8>, pow: usize)->Vec<usize>{
+    let mut to_ret = Vec::with_capacity(data.len()*8/pow);
+    let mask = 0b10000000;
+    let mut next = 0;
+    for i in 0..data.len(){
+        for j in 0..8 {
+
+            next = next << 1;
+            if data[i]&mask != 0 {
+                next = next + 1;
+            }
+            data[i]=data[i]<<1;
+            if (8*i+j+1) % pow == 0{
+                to_ret.push(next);
+                next = 0;
+            }
+        }
+    }
+    to_ret
 }
