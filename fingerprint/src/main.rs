@@ -21,7 +21,7 @@ struct Config {
     rec_frames: usize,
     pair_frames: usize,
     key_len: usize,
-    key_frames: usize,
+    slices: usize,
     send_len: usize,
     rs_n: usize,
     rs_k: usize,
@@ -33,22 +33,22 @@ struct Config {
 fn main() {
    // todo!();
     //Random sequence of u8s for test
-    println!("Sanity check: usize has size: {}", size_of::<usize>());
+    //println!("Sanity check: usize has size: {}", size_of::<usize>());
     let message = vec![249,10,147,43,171,167,4,135,1,70,209,183,237,48,169,125,157,169,93,155,36,181,101,221,217,11,201,43,160,172,247,181,145,9,174,94,248,241,108,176,163,242,249,154,167,5,207,227,197,240,58,219,151,9,158,90,235,230,180,221,198,135,171,43];
     //Todo: Double check all my dimensions; I've got an inconsistency somewhere
     //Specifically, message len and key len are not equal and they should be
     //Think the issue is that key len is 512 bits, and message len is 512 words
     //Since each word is in fact 10 bits long, that's an issue
     //Config might be using some unneeded values as well; should go through and check
-
+    //Definitely some fraction of config can be inferred from the rest of it, so should remove excess config options
     let config = Config{
         slice_size: 16537,
         num_bands: 33,
         rec_frames: 893002,
         pair_frames: 132300,
         key_len: 1024,
-        key_frames: 512,
-        send_len: 133016,
+        slices: 32,
+        send_len: 132956,
         rs_n: 512,
         rs_k: 102,
         gf_pow: 10,
@@ -235,10 +235,10 @@ where F: Fn(&str, usize)->Vec<u8>, G: Fn(Vec<u8>, Vec<u8>)->Vec<u8>{
 	let mut filled = 0;
     let buf = buffer.as_mut_slice();
 	while filled < config.send_len {
-        println!("Sanity check; inside read loop?");
+        //println!("Sanity check; inside read loop?");
         let t =  stream.read(&mut buf[filled..config.send_len])?;
         filled = filled+t;
-        println!("filled: {}", filled);
+        //println!("filled: {}", filled);
 	}
     //let received_data: Vec<u8> = to_i16(buffer);//Vec::from_raw_parts(buffer.as_mut_ptr() as *mut i16, buffer.len()/2, buffer.len()/2);
     //let offset=align(&buffer, &data);
@@ -340,7 +340,7 @@ fn receive_message(data: Vec<u8>, mut received:Vec<u8>, config: &Config)->Vec<us
 		k: config.rs_k
 	};
 	for i in 0..200 {
-		let slice = if offset <44100/5 { &data[i*441..config.key_frames+i*441]}else{&data[offset-44100/5+i*441..config.key_frames+offset-44100/5+i*441]};
+		let slice = if offset <44100/5 { &data[i*441..config.slices*config.slice_size+i*441]}else{&data[offset-44100/5+i*441..config.slices*config.slice_size+offset-44100/5+i*441]};
 		let fp = to_upow(from_bools(&fingerprint(slice, config)), config.gf_pow);
 		//let com
         let min = if message.len() < fp.len() {message.len()} else {fp.len()};
@@ -383,7 +383,7 @@ fn receive_pair(data: Vec<u8>, mut received:Vec<u8>, config: &Config)->Vec<usize
 		k: config.rs_k
 	};
 	'outer: for i in 0..200 {
-		let slice = if offset <44100/5 { &data[i*441..config.key_frames+i*441]}else{&data[offset-44100/5+i*441..config.key_frames+offset-44100/5+i*441]};
+		let slice = if offset <44100/5 { &data[i*441..config.slices*config.slice_size+i*441]}else{&data[offset-44100/5+i*441..config.slices*config.slice_size+offset-44100/5+i*441]};
 		let fp = to_upow(from_bools(&fingerprint(slice, config)), config.gf_pow);
         let min = if message.len() <fp.len() {message.len()} else {fp.len()};
 		for j in 0..min{
