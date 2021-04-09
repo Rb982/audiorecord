@@ -67,6 +67,7 @@ fn main() {
     config.rec_frames=config.pair_frames+(config.slice_size*config.slices);
     config.key_len=config.slices*(config.num_bands-1);
     //Something strange is occurring here.  Should be +64, since we're hashing with sha-512, but 16 is what actually shows up
+    //On testing, hash is of expected length, but my message poly ends up at 272 bytes instead of the expected 320
     config.send_len=config.pair_frames+(config.rs_n*config.gf_pow)/8+16; 
     let mut args = env::args();
     let _ = args.next();
@@ -343,7 +344,7 @@ fn receive_message(data: Vec<u8>, mut received:Vec<u8>, config: &Config)->Vec<us
 	let hash = message.split_off(message.len()-16);
     let message = to_upow(message, config.gf_pow);
 	
-	let mut test=vec![0, message.len()]; //Vec::with_capacity(message.len());
+	let mut test=vec![0; message.len()]; //Vec::with_capacity(message.len());
     
 	let field = reed_solomon::GaloisField::new(config.gf_pow, config.gf_prim, config.gf_gen);
 	let rs = reed_solomon::ReedSolomon{
@@ -351,7 +352,10 @@ fn receive_message(data: Vec<u8>, mut received:Vec<u8>, config: &Config)->Vec<us
 		n: config.rs_n,
 		k: config.rs_k
 	};
-	for i in 0..200 {
+    
+    let attempts = if data.len()-(config.slices*config.slice_size)> 88200 {200} else{(data.len()-config.slices*config.slice_size)/441};
+    
+	for i in 0..attempts {
 		let slice = if offset <44100/5 { &data[i*441..config.slices*config.slice_size+i*441]}else{&data[offset-44100/5+i*441..config.slices*config.slice_size+offset-44100/5+i*441]};
 		let fp = to_upow(from_bools(&fingerprint(slice, config)), config.gf_pow);
 		//let com
@@ -385,8 +389,8 @@ fn receive_pair(data: Vec<u8>, mut received:Vec<u8>, config: &Config)->Vec<usize
 
 	let _hash = message.split_off(message.len()-16);
     let message = to_upow(message, config.gf_pow);
-	
-	let mut test=vec![0, message.len()]; //Vec::with_capacity(message.len());
+	println!("Is my conversion broken?");
+	let mut test=vec![0; message.len()]; //Vec::with_capacity(message.len());
     
 	let field = reed_solomon::GaloisField::new(config.gf_pow, config.gf_prim, config.gf_gen);
 	let rs = reed_solomon::ReedSolomon{
@@ -394,23 +398,29 @@ fn receive_pair(data: Vec<u8>, mut received:Vec<u8>, config: &Config)->Vec<usize
 		n: config.rs_n,
 		k: config.rs_k
 	};
-	'outer: for i in 0..200 {
+    println!("Do we reach the loop?");
+    let attempts = if data.len()-(config.slices*config.slice_size)> 88200 {200} else{(data.len()-config.slices*config.slice_size)/441};
+	'outer: for i in 0..attempts {
 		let slice = if offset <44100/5 { &data[i*441..config.slices*config.slice_size+i*441]}else{&data[offset-44100/5+i*441..config.slices*config.slice_size+offset-44100/5+i*441]};
 		let fp = to_upow(from_bools(&fingerprint(slice, config)), config.gf_pow);
+        println!("What about this conversion?");
         let min = if message.len() <fp.len() {message.len()} else {fp.len()};
 		for j in 0..min{
 			test[j] = message[j]^fp[j];
 		}
         for j in min..message.len(){
-            test[j]=message[j]
+            test[j]=message[j];
         }
+        println!("Xor all good in i: {}", i);
 		let mut test_poly = reed_solomon::Poly{coeffs: test};
 		test_poly = rs.decode(test_poly).unwrap();
+        println!("Decode all good in i: {}", i);
 		let syndrome_components=rs.syndrome_components(&test_poly);
+        println!("Syndrome all good in i: {}", i);
         test = test_poly.coeffs;
-        for i in 0..syndrome_components.len(){
+        for j in 0..syndrome_components.len(){
             //If there's a nonzero syndrome component in the decoded word, we failed to decode to a valid key word and can continue
-            if syndrome_components[i]!=0 {continue 'outer;}
+            if syndrome_components[j]!=0 {continue 'outer;}
         }
         return syndrome_components;
 		//; 
