@@ -434,15 +434,15 @@ fn build_message(message: Vec<usize>, mut recorded: Vec<u8>, config:&Config)->Ve
     let mut hasher = sha2::Sha512::new();
     hasher.update(&mess_poly);
     let result = hasher.finalize();
-    println!("Hash Result is of length {}", result.as_slice().len())
+    println!("Hash Result is of length {}", result.as_slice().len());
     let min = if mess_poly.len() < key.len() {mess_poly.len()} else {key.len()};
     for i in 0..min{
         mess_poly[i]=mess_poly[i]^key[i];
     }
-    println!("message poly is of length {} " +mess_poly.len());
+    println!("message poly is of length {} ", mess_poly.len());
     recorded.extend_from_slice(&mess_poly);
     recorded.extend_from_slice(&result.as_slice());
-    println!("To send is of length {} " +recorded.len());
+    println!("To send is of length {} ", recorded.len());
     recorded
     //todo!();
 }

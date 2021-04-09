@@ -6,4 +6,5 @@ Main function receives three arguments, passed via command-line:
     dev_name: the name of the recording device.
 
     Send and pair will return a vec of non-zero length on a success, a vec of zero length if everything sent and received but no successful decoding occurred, and an error if a network issue occurred.  Receive will return the message it sent on a successful communication, and an error on a failed communication; it does not know whether the decoding succeeded or failed on the other end.
+    Note - performance in debug mode is pretty poor.  Prefer to use release mode 
 Other parameters of interest are defined in the config object created in main, and can be adjusted as desired.
